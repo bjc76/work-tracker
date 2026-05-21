@@ -60,8 +60,19 @@ const Picker: React.FC<{
 
 const App: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<Category>('Revision');
-  const [seconds, setSeconds] = useState(0);
-  const [isActive, setIsActive] = useState(false);
+  const [isActive, setIsActive] = useState(() => localStorage.getItem('timer_active') === 'true');
+  const [startTime, setStartTime] = useState<number | null>(() => {
+    const saved = localStorage.getItem('timer_start_time');
+    return saved ? parseInt(saved) : null;
+  });
+  const [seconds, setSeconds] = useState(() => {
+    const savedActive = localStorage.getItem('timer_active') === 'true';
+    const savedStart = localStorage.getItem('timer_start_time');
+    if (savedActive && savedStart) {
+      return Math.floor((Date.now() - parseInt(savedStart)) / 1000);
+    }
+    return 0;
+  });
   const [history, setHistory] = useState<DailyData[]>([]);
   const [todayMinutes, setTodayMinutes] = useState(0);
   const [dailyGoal, setDailyGoal] = useState(240); // 4 hours default
@@ -121,11 +132,15 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    if (isActive) {
-      timerRef.current = window.setInterval(() => setSeconds(s => s + 1), 1000);
-    } else if (timerRef.current) clearInterval(timerRef.current);
+    if (isActive && startTime) {
+      timerRef.current = window.setInterval(() => {
+        setSeconds(Math.floor((Date.now() - startTime) / 1000));
+      }, 1000);
+    } else if (timerRef.current) {
+      clearInterval(timerRef.current);
+    }
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [isActive]);
+  }, [isActive, startTime]);
 
   const addMinutes = (mins: number) => {
     const today = new Date().toISOString().split('T')[0];
@@ -229,8 +244,17 @@ const App: React.FC = () => {
               const mins = Math.floor(seconds / 60);
               if (mins > 0) addMinutes(mins);
               setIsActive(false);
+              setStartTime(null);
               setSeconds(0);
-            } else setIsActive(true);
+              localStorage.removeItem('timer_active');
+              localStorage.removeItem('timer_start_time');
+            } else {
+              const now = Date.now();
+              setIsActive(true);
+              setStartTime(now);
+              localStorage.setItem('timer_active', 'true');
+              localStorage.setItem('timer_start_time', now.toString());
+            }
           }}>
             <div className="circular-timer-container">
               <svg className="timer-svg" viewBox="0 0 300 300">
