@@ -101,7 +101,7 @@ const App: React.FC = () => {
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${sc.toString().padStart(2, '0')}`;
   };
 
-  const radius = 100;
+  const radius = 135;
   const circ = 2 * Math.PI * radius;
   const off = circ - Math.min((seconds / 60) / 300, 1) * circ;
   const dProg = Math.min(todayMinutes / dailyGoal, 1);
@@ -126,23 +126,25 @@ const App: React.FC = () => {
       </div>
 
       <main className="timer-section">
-        <div className="circular-timer-container">
-          <svg className="timer-svg" viewBox="0 0 240 240">
-            <circle className="timer-track" cx="120" cy="120" r={radius} strokeWidth="4" />
-            <circle className="timer-progress" cx="120" cy="120" r={radius} strokeWidth="4" strokeDasharray={circ} style={{ strokeDashoffset: off }} strokeLinecap="round" />
-          </svg>
-          <div className="time-display-container">
-            <div className="active-category-label">{activeCategory}</div>
-            <div className="time-string">{format(seconds)}</div>
-            <div className="timer-actions">
-              <button className={`timer-action-btn ${isActive ? 'stop' : 'start'}`} onClick={toggle}>
-                {isActive ? <Square size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
-              </button>
-              <button className="manual-log-btn" onClick={() => setShowManual(!showManual)}>
-                {showManual ? 'Cancel' : '+ Log'}
-              </button>
+        <div className="timer-wrapper">
+          <button className="timer-control-surface" onClick={toggle}>
+            <div className="circular-timer-container">
+              <svg className="timer-svg" viewBox="0 0 300 300">
+                <circle className="timer-track" cx="150" cy="150" r={radius} strokeWidth="5" />
+                <circle className="timer-progress" cx="150" cy="150" r={radius} strokeWidth="5" strokeDasharray={circ} style={{ strokeDashoffset: off }} strokeLinecap="round" />
+              </svg>
+              <div className="time-display-container">
+                <div className="time-string">{format(seconds)}</div>
+                <div className={`timer-status-icon ${isActive ? 'active' : ''}`}>
+                  {isActive ? <Square size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" style={{ marginLeft: '4px' }} />}
+                </div>
+              </div>
             </div>
-          </div>
+          </button>
+          
+          <button className="manual-log-btn" onClick={() => setShowManual(!showManual)}>
+            {showManual ? 'Cancel' : '+ Log minutes'}
+          </button>
         </div>
       </main>
 

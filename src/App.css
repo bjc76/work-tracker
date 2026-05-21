@@ -158,14 +158,41 @@
 .timer-section {
   flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
 }
 
+.timer-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+
+.timer-control-surface {
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  width: 300px;
+  height: 300px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.timer-control-surface:active {
+  transform: scale(0.97);
+}
+
 .circular-timer-container {
   position: relative;
-  width: 240px;
-  height: 240px;
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -183,13 +210,13 @@
 .timer-track {
   fill: none;
   stroke: var(--ios-light-blue);
-  stroke-width: 6;
+  stroke-width: 5;
 }
 
 .timer-progress {
   fill: none;
   stroke: var(--ios-blue);
-  stroke-width: 6;
+  stroke-width: 5;
   transition: stroke-dashoffset 0.5s linear;
 }
 
@@ -198,41 +225,35 @@
   z-index: 1;
 }
 
-.active-category-label {
-  font-size: 14px;
-  color: var(--ios-text-secondary);
+.time-string {
+  font-family: "Times New Roman", Times, serif;
+  font-size: 56px;
+  font-weight: 400;
+  color: var(--ios-text);
   margin-bottom: 8px;
 }
 
-.time-string {
-  font-family: "Times New Roman", Times, serif;
-  font-size: 44px;
-  font-weight: 400;
-  color: var(--ios-text);
-  margin-bottom: 16px;
+.timer-status-icon {
+  color: var(--ios-text-secondary);
+  opacity: 0.4;
+  transition: all 0.3s ease;
 }
 
-.timer-action-btn {
-  width: 54px;
-  height: 54px;
-  border-radius: 27px;
+.timer-status-icon.active {
+  color: #FF3B30;
+  opacity: 0.8;
+}
+
+.manual-log-btn {
+  background: transparent;
   border: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
-}
-
-.timer-action-btn.start {
-  background-color: var(--ios-blue);
-  color: white;
-  padding-left: 3px;
-}
-
-.timer-action-btn.stop {
-  background-color: #FF3B30;
-  color: white;
+  color: var(--ios-blue);
+  padding: 12px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: 10px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Progress Section */
