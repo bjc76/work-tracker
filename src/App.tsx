@@ -91,7 +91,16 @@ const App: React.FC = () => {
       d.setDate(d.getDate() - i);
       const dateStr = d.toISOString().split('T')[0];
       const existing = finalHistory.find(h => h.date === dateStr);
-      syncedHistory.push(existing || { 
+      
+      syncedHistory.push(existing ? {
+        ...existing,
+        categories: {
+          Revision: 0,
+          Lectures: 0,
+          Supervisions: 0,
+          ...existing.categories
+        }
+      } : { 
         date: dateStr, 
         categories: { Revision: 0, Lectures: 0, Supervisions: 0 } 
       });
@@ -120,38 +129,63 @@ const App: React.FC = () => {
 
   const addMinutes = (mins: number) => {
     const today = new Date().toISOString().split('T')[0];
-    const next = [...history];
-    let idx = next.findIndex(d => d.date === today);
     
-    if (idx === -1) {
-      next.push({ date: today, categories: { Revision: 0, Lectures: 0, Supervisions: 0 } });
-      idx = next.length - 1;
-    }
-    next[idx].categories[activeCategory] += mins;
-    
-    // Resync to exactly 7 days
-    const syncedHistory: DailyData[] = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const dateStr = d.toISOString().split('T')[0];
-      const existing = next.find(h => h.date === dateStr);
-      syncedHistory.push(existing || { date: dateStr, categories: { Revision: 0, Lectures: 0, Supervisions: 0 } });
-    }
+    setHistory(prev => {
+      const next = prev.map(d => ({
+        ...d,
+        categories: { ...d.categories }
+      }));
+      
+      let idx = next.findIndex(d => d.date === today);
+      if (idx === -1) {
+        next.push({ 
+          date: today, 
+          categories: { Revision: 0, Lectures: 0, Supervisions: 0 } 
+        });
+        idx = next.length - 1;
+      }
+      
+      // Ensure the category exists and is a number
+      const currentMins = next[idx].categories[activeCategory] || 0;
+      next[idx].categories[activeCategory] = currentMins + mins;
+      
+      // Resync to exactly 7 days
+      const syncedHistory: DailyData[] = [];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const dateStr = d.toISOString().split('T')[0];
+        const existing = next.find(h => h.date === dateStr);
+        
+        syncedHistory.push(existing ? {
+          ...existing,
+          categories: {
+            Revision: 0,
+            Lectures: 0,
+            Supervisions: 0,
+            ...existing.categories
+          }
+        } : { 
+          date: dateStr, 
+          categories: { Revision: 0, Lectures: 0, Supervisions: 0 } 
+        });
+      }
 
-    setHistory(syncedHistory);
-    localStorage.setItem('rev_hist_v2', JSON.stringify(syncedHistory));
-    updateTodayTotal(syncedHistory);
+      localStorage.setItem('rev_hist_v2', JSON.stringify(syncedHistory));
+      // Schedule update of today total after state update
+      setTimeout(() => updateTodayTotal(syncedHistory), 0);
+      return syncedHistory;
+    });
   };
 
   const handleManualAdd = () => {
     const total = manualH * 60 + manualM;
     if (total > 0) {
       addMinutes(total);
-      setManualH(0);
-      setManualM(0);
-      setShowManual(false);
     }
+    setManualH(0);
+    setManualM(0);
+    setShowManual(false);
   };
 
   const format = (s: number) => {
