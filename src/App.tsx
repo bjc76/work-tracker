@@ -24,8 +24,12 @@ const App: React.FC = () => {
   const [todayMinutes, setTodayMinutes] = useState(0);
   const [dailyGoal, setDailyGoal] = useState(240); // 4 hours default
   const [isEditingGoal, setIsEditingGoal] = useState(false);
-  const [manualMinutes, setManualMinutes] = useState('');
+  
+  // Manual Log State
   const [showManual, setShowManual] = useState(false);
+  const [manualHours, setManualHours] = useState('0');
+  const [manualMinutes, setManualMinutes] = useState('0');
+
   const [selectedDay, setSelectedDay] = useState<DailyData | null>(null);
   const timerRef = useRef<number | null>(null);
 
@@ -34,40 +38,41 @@ const App: React.FC = () => {
     const savedGoal = localStorage.getItem('daily_goal');
     if (savedGoal) setDailyGoal(parseInt(savedGoal));
 
+    let finalHistory: DailyData[] = [];
+
     if (saved) {
-      const parsed = JSON.parse(saved);
-      setHistory(parsed);
-      updateTodayTotal(parsed);
+      finalHistory = JSON.parse(saved);
     } else {
-      // Legacy check or initial launch
       const legacy = localStorage.getItem('rev_hist');
       if (legacy) {
         const parsedLegacy = JSON.parse(legacy);
-        const migrated: DailyData[] = parsedLegacy.map((d: any) => ({
+        finalHistory = parsedLegacy.map((d: any) => ({
           date: d.date,
           categories: { Revision: d.minutes || 0, Lectures: 0, Supervisions: 0 }
         }));
-        setHistory(migrated);
-        updateTodayTotal(migrated);
-        localStorage.setItem('rev_hist_v2', JSON.stringify(migrated));
         localStorage.removeItem('rev_hist');
-      } else {
-        const mock: DailyData[] = [];
-        for (let i = 6; i >= 0; i--) {
-          const d = new Date();
-          d.setDate(d.getDate() - i);
-          const rev = i === 0 ? 0 : Math.floor(Math.random() * 120) + 30;
-          const lec = i === 0 ? 0 : Math.floor(Math.random() * 60);
-          mock.push({ 
-            date: d.toISOString().split('T')[0], 
-            categories: { Revision: rev, Lectures: lec, Supervisions: 0 }
-          });
-        }
-        setHistory(mock);
-        updateTodayTotal(mock);
-        localStorage.setItem('rev_hist_v2', JSON.stringify(mock));
       }
     }
+
+    const syncedHistory: DailyData[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().split('T')[0];
+      const existing = finalHistory.find(h => h.date === dateStr);
+      if (existing) {
+        syncedHistory.push(existing);
+      } else {
+        syncedHistory.push({ 
+          date: dateStr, 
+          categories: { Revision: 0, Lectures: 0, Supervisions: 0 } 
+        });
+      }
+    }
+
+    setHistory(syncedHistory);
+    updateTodayTotal(syncedHistory);
+    localStorage.setItem('rev_hist_v2', JSON.stringify(syncedHistory));
   }, []);
 
   const updateTodayTotal = (hist: DailyData[]) => {
@@ -101,17 +106,33 @@ const App: React.FC = () => {
 
     next[idx].categories[activeCategory] += mins;
     
-    const trimmed = next.slice(-7);
-    setHistory(trimmed);
-    localStorage.setItem('rev_hist_v2', JSON.stringify(trimmed));
-    updateTodayTotal(trimmed);
+    const syncedHistory: DailyData[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().split('T')[0];
+      const existing = next.find(h => h.date === dateStr);
+      if (existing) {
+        syncedHistory.push(existing);
+      } else {
+        syncedHistory.push({ 
+          date: dateStr, 
+          categories: { Revision: 0, Lectures: 0, Supervisions: 0 } 
+        });
+      }
+    }
+
+    setHistory(syncedHistory);
+    localStorage.setItem('rev_hist_v2', JSON.stringify(syncedHistory));
+    updateTodayTotal(syncedHistory);
   };
 
   const handleManualAdd = () => {
-    const mins = parseInt(manualMinutes);
-    if (!isNaN(mins) && mins > 0) {
-      addMinutes(mins);
-      setManualMinutes('');
+    const totalMins = (parseInt(manualHours) || 0) * 60 + (parseInt(manualMinutes) || 0);
+    if (totalMins > 0) {
+      addMinutes(totalMins);
+      setManualHours('0');
+      setManualMinutes('0');
       setShowManual(false);
     }
   };
@@ -151,6 +172,7 @@ const App: React.FC = () => {
 
   return (
     <div className="app-container">
+      <div className="user-id-label">bjc76</div>
       <header className="app-header">
         <h1 className="academic-title">Academic Tracker</h1>
         <div className="date-display">{new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}</div>
@@ -185,24 +207,11 @@ const App: React.FC = () => {
             </div>
           </button>
           
-          <button className="manual-log-btn" onClick={() => setShowManual(!showManual)}>
-            {showManual ? 'Cancel' : '+ Log'}
+          <button className="manual-log-btn" onClick={() => setShowManual(true)}>
+            + Log
           </button>
         </div>
       </main>
-
-      {showManual && (
-        <div className="manual-input-bar">
-          <input 
-            type="number" 
-            placeholder="Min" 
-            value={manualMinutes} 
-            onChange={e => setManualMinutes(e.target.value)}
-            className="manual-input"
-          />
-          <button onClick={handleManualAdd} className="add-btn">Add</button>
-        </div>
-      )}
 
       <section className="progress-section">
         <div className="progress-labels">
@@ -240,7 +249,7 @@ const App: React.FC = () => {
                 }
               }}
             >
-              <Bar dataKey="total" radius={[2, 2, 0, 0]}>
+              <Bar dataKey="total" radius={[2, 2, 0, 0]} minPointSize={4}>
                 {chartData.map((_entry, index) => (
                   <Cell 
                     key={`cell-${index}`} 
@@ -259,6 +268,46 @@ const App: React.FC = () => {
         </div>
       </footer>
 
+      {/* Manual Log Popup */}
+      {showManual && (
+        <div className="ios-popup-overlay" onClick={() => setShowManual(false)}>
+          <div className="ios-popup-card" onClick={e => e.stopPropagation()}>
+            <div className="popup-header">
+              <h3>Manual Log</h3>
+              <button className="close-popup" onClick={() => setShowManual(false)}>×</button>
+            </div>
+            <div className="popup-body">
+              <div className="picker-container">
+                <div className="picker-column">
+                  <input 
+                    type="number" 
+                    value={manualHours} 
+                    onChange={e => setManualHours(e.target.value)}
+                    className="picker-input"
+                    min="0"
+                    max="23"
+                  />
+                  <span className="picker-label">hrs</span>
+                </div>
+                <div className="picker-column">
+                  <input 
+                    type="number" 
+                    value={manualMinutes} 
+                    onChange={e => setManualMinutes(e.target.value)}
+                    className="picker-input"
+                    min="0"
+                    max="59"
+                  />
+                  <span className="picker-label">min</span>
+                </div>
+              </div>
+              <button onClick={handleManualAdd} className="ios-action-btn">Add to {activeCategory}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* History Popup */}
       {selectedDay && (
         <div className="ios-popup-overlay" onClick={() => setSelectedDay(null)}>
           <div className="ios-popup-card" onClick={e => e.stopPropagation()}>
