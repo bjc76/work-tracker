@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   BarChart, 
   Bar, 
+  XAxis,
   ResponsiveContainer, 
   Cell 
 } from 'recharts';
@@ -16,6 +17,47 @@ interface DailyData {
 const CATEGORIES: Category[] = ['Supervisions', 'Lectures', 'Revision'];
 const MAX_TIMER_MINUTES = 120; // 2 hours for the visual circle
 
+// --- Helper for iOS Scroll Picker ---
+const Picker: React.FC<{
+  value: number;
+  max: number;
+  label: string;
+  onChange: (val: number) => void;
+}> = ({ value, max, label, onChange }) => {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const itemHeight = 44;
+  const items = Array.from({ length: max + 1 }, (_, i) => i);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = value * itemHeight;
+    }
+  }, []);
+
+  const onScroll = () => {
+    if (!scrollRef.current) return;
+    const index = Math.round(scrollRef.current.scrollTop / itemHeight);
+    if (index >= 0 && index <= max && index !== value) {
+      onChange(index);
+    }
+  };
+
+  return (
+    <div className="ios-picker-col">
+      <div className="ios-picker-scroll" ref={scrollRef} onScroll={onScroll}>
+        <div className="ios-picker-spacer" />
+        {items.map(i => (
+          <div key={i} className={`ios-picker-item ${value === i ? 'active' : ''}`}>
+            {i.toString().padStart(2, '0')}
+          </div>
+        ))}
+        <div className="ios-picker-spacer" />
+      </div>
+      <span className="ios-picker-label">{label}</span>
+    </div>
+  );
+};
+
 const App: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<Category>('Revision');
   const [seconds, setSeconds] = useState(0);
@@ -27,8 +69,8 @@ const App: React.FC = () => {
   
   // Manual Log State
   const [showManual, setShowManual] = useState(false);
-  const [manualHours, setManualHours] = useState('0');
-  const [manualMinutes, setManualMinutes] = useState('0');
+  const [manualH, setManualH] = useState(0);
+  const [manualM, setManualM] = useState(0);
 
   const [selectedDay, setSelectedDay] = useState<DailyData | null>(null);
   const timerRef = useRef<number | null>(null);
@@ -39,19 +81,8 @@ const App: React.FC = () => {
     if (savedGoal) setDailyGoal(parseInt(savedGoal));
 
     let finalHistory: DailyData[] = [];
-
     if (saved) {
       finalHistory = JSON.parse(saved);
-    } else {
-      const legacy = localStorage.getItem('rev_hist');
-      if (legacy) {
-        const parsedLegacy = JSON.parse(legacy);
-        finalHistory = parsedLegacy.map((d: any) => ({
-          date: d.date,
-          categories: { Revision: d.minutes || 0, Lectures: 0, Supervisions: 0 }
-        }));
-        localStorage.removeItem('rev_hist');
-      }
     }
 
     const syncedHistory: DailyData[] = [];
@@ -60,14 +91,10 @@ const App: React.FC = () => {
       d.setDate(d.getDate() - i);
       const dateStr = d.toISOString().split('T')[0];
       const existing = finalHistory.find(h => h.date === dateStr);
-      if (existing) {
-        syncedHistory.push(existing);
-      } else {
-        syncedHistory.push({ 
-          date: dateStr, 
-          categories: { Revision: 0, Lectures: 0, Supervisions: 0 } 
-        });
-      }
+      syncedHistory.push(existing || { 
+        date: dateStr, 
+        categories: { Revision: 0, Lectures: 0, Supervisions: 0 } 
+      });
     }
 
     setHistory(syncedHistory);
@@ -97,29 +124,19 @@ const App: React.FC = () => {
     let idx = next.findIndex(d => d.date === today);
     
     if (idx === -1) {
-      next.push({ 
-        date: today, 
-        categories: { Revision: 0, Lectures: 0, Supervisions: 0 } 
-      });
+      next.push({ date: today, categories: { Revision: 0, Lectures: 0, Supervisions: 0 } });
       idx = next.length - 1;
     }
-
     next[idx].categories[activeCategory] += mins;
     
+    // Resync to exactly 7 days
     const syncedHistory: DailyData[] = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
       const dateStr = d.toISOString().split('T')[0];
       const existing = next.find(h => h.date === dateStr);
-      if (existing) {
-        syncedHistory.push(existing);
-      } else {
-        syncedHistory.push({ 
-          date: dateStr, 
-          categories: { Revision: 0, Lectures: 0, Supervisions: 0 } 
-        });
-      }
+      syncedHistory.push(existing || { date: dateStr, categories: { Revision: 0, Lectures: 0, Supervisions: 0 } });
     }
 
     setHistory(syncedHistory);
@@ -128,28 +145,13 @@ const App: React.FC = () => {
   };
 
   const handleManualAdd = () => {
-    const totalMins = (parseInt(manualHours) || 0) * 60 + (parseInt(manualMinutes) || 0);
-    if (totalMins > 0) {
-      addMinutes(totalMins);
-      setManualHours('0');
-      setManualMinutes('0');
+    const total = manualH * 60 + manualM;
+    if (total > 0) {
+      addMinutes(total);
+      setManualH(0);
+      setManualM(0);
       setShowManual(false);
     }
-  };
-
-  const toggle = () => {
-    if (isActive) {
-      const mins = Math.floor(seconds / 60);
-      if (mins > 0) addMinutes(mins);
-      setIsActive(false);
-      setSeconds(0);
-    } else setIsActive(true);
-  };
-
-  const updateGoal = (g: number) => {
-    setDailyGoal(g);
-    localStorage.setItem('daily_goal', g.toString());
-    setIsEditingGoal(false);
   };
 
   const format = (s: number) => {
@@ -180,11 +182,7 @@ const App: React.FC = () => {
 
       <div className="segmented-control">
         {CATEGORIES.map(c => (
-          <button 
-            key={c} 
-            className={`segment-btn ${activeCategory === c ? 'active' : ''}`} 
-            onClick={() => setActiveCategory(c)}
-          >
+          <button key={c} className={`segment-btn ${activeCategory === c ? 'active' : ''}`} onClick={() => setActiveCategory(c)}>
             {c}
           </button>
         ))}
@@ -192,7 +190,14 @@ const App: React.FC = () => {
 
       <main className="timer-section">
         <div className="timer-wrapper">
-          <button className="timer-control-surface" onClick={toggle}>
+          <button className="timer-control-surface" onClick={() => {
+            if (isActive) {
+              const mins = Math.floor(seconds / 60);
+              if (mins > 0) addMinutes(mins);
+              setIsActive(false);
+              setSeconds(0);
+            } else setIsActive(true);
+          }}>
             <div className="circular-timer-container">
               <svg className="timer-svg" viewBox="0 0 300 300">
                 <circle className="timer-track" cx="150" cy="150" r={radius} strokeWidth="5" />
@@ -206,10 +211,7 @@ const App: React.FC = () => {
               </div>
             </div>
           </button>
-          
-          <button className="manual-log-btn" onClick={() => setShowManual(true)}>
-            + Log
-          </button>
+          <button className="manual-log-btn" onClick={() => setShowManual(true)}>+ Log</button>
         </div>
       </main>
 
@@ -228,8 +230,12 @@ const App: React.FC = () => {
               type="number" 
               className="goal-input"
               autoFocus
-              onBlur={e => updateGoal(parseInt(e.target.value) || 240)}
-              onKeyDown={e => e.key === 'Enter' && updateGoal(parseInt((e.target as HTMLInputElement).value) || 240)}
+              onBlur={e => {
+                const g = parseInt(e.target.value) || 240;
+                setDailyGoal(g);
+                localStorage.setItem('daily_goal', g.toString());
+                setIsEditingGoal(false);
+              }}
               defaultValue={dailyGoal}
             />
           ) : (
@@ -240,17 +246,22 @@ const App: React.FC = () => {
 
       <footer className="history-section">
         <div className="chart-container">
-          <ResponsiveContainer width="100%" height={50}>
-            <BarChart 
-              data={chartData} 
-              onClick={(data: any) => {
-                if (data && data.activePayload) {
-                  setSelectedDay(data.activePayload[0].payload.raw);
-                }
-              }}
-            >
-              <Bar dataKey="total" radius={[2, 2, 0, 0]} minPointSize={4}>
-                {chartData.map((_entry, index) => (
+          <ResponsiveContainer width="100%" height={70}>
+            <BarChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 20 }}>
+              <XAxis 
+                dataKey="day" 
+                axisLine={false} 
+                tickLine={false} 
+                tick={{ fontSize: 10, fill: '#8E8E93', fontWeight: 600 }}
+                dy={10}
+              />
+              <Bar 
+                dataKey="total" 
+                radius={[4, 4, 0, 0]} 
+                minPointSize={10}
+                onClick={(data: any) => setSelectedDay(data.raw)}
+              >
+                {chartData.map((_, index) => (
                   <Cell 
                     key={`cell-${index}`} 
                     fill={index === chartData.length - 1 ? '#007AFF' : '#D0E3FF'} 
@@ -261,45 +272,21 @@ const App: React.FC = () => {
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <div className="chart-labels">
-          {chartData.map((d, i) => (
-            <span key={i} className="chart-day-label">{d.day}</span>
-          ))}
-        </div>
       </footer>
 
-      {/* Manual Log Popup */}
       {showManual && (
         <div className="ios-popup-overlay" onClick={() => setShowManual(false)}>
           <div className="ios-popup-card" onClick={e => e.stopPropagation()}>
             <div className="popup-header">
               <h3>Manual Log</h3>
-              <button className="close-popup" onClick={() => setShowManual(false)}>×</button>
+              <button className="close-popup" onClick={() => setShowManual(false)}>
+                <span className="close-icon">×</span>
+              </button>
             </div>
             <div className="popup-body">
-              <div className="picker-container">
-                <div className="picker-column">
-                  <input 
-                    type="number" 
-                    value={manualHours} 
-                    onChange={e => setManualHours(e.target.value)}
-                    className="picker-input"
-                    min="0"
-                    max="23"
-                  />
-                  <span className="picker-label">hrs</span>
-                </div>
-                <div className="picker-column">
-                  <input 
-                    type="number" 
-                    value={manualMinutes} 
-                    onChange={e => setManualMinutes(e.target.value)}
-                    className="picker-input"
-                    min="0"
-                    max="59"
-                  />
-                  <span className="picker-label">min</span>
-                </div>
+              <div className="ios-picker-wrapper">
+                <Picker value={manualH} max={23} label="hours" onChange={setManualH} />
+                <Picker value={manualM} max={59} label="min" onChange={setManualM} />
               </div>
               <button onClick={handleManualAdd} className="ios-action-btn">Add to {activeCategory}</button>
             </div>
@@ -307,18 +294,19 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* History Popup */}
       {selectedDay && (
         <div className="ios-popup-overlay" onClick={() => setSelectedDay(null)}>
           <div className="ios-popup-card" onClick={e => e.stopPropagation()}>
             <div className="popup-header">
               <h3>{new Date(selectedDay.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</h3>
-              <button className="close-popup" onClick={() => setSelectedDay(null)}>×</button>
+              <button className="close-popup" onClick={() => setSelectedDay(null)}>
+                <span className="close-icon">×</span>
+              </button>
             </div>
             <div className="popup-body">
               <div className="popup-total-row">
-                <span className="total-label">Total Pursuit</span>
-                <span className="total-val">{Math.floor(Object.values(selectedDay.categories).reduce((a,b)=>a+b,0) / 60)}h {Object.values(selectedDay.categories).reduce((a,b)=>a+b,0) % 60}m</span>
+                <span>Total Pursuit</span>
+                <span>{Math.floor(Object.values(selectedDay.categories).reduce((a,b)=>a+b,0) / 60)}h {Object.values(selectedDay.categories).reduce((a,b)=>a+b,0) % 60}m</span>
               </div>
               <div className="popup-divider" />
               {CATEGORIES.map(cat => (
