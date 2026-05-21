@@ -9,8 +9,12 @@ import { Play, Square } from 'lucide-react';
 import './App.css';
 
 type Category = 'Supervisions' | 'Lectures' | 'Revision';
-interface DailyData { date: string; minutes: number; }
+interface DailyData { 
+  date: string; 
+  categories: Record<Category, number>;
+}
 const CATEGORIES: Category[] = ['Supervisions', 'Lectures', 'Revision'];
+const MAX_TIMER_MINUTES = 120; // 2 hours for the visual circle
 
 const App: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<Category>('Revision');
@@ -22,34 +26,58 @@ const App: React.FC = () => {
   const [isEditingGoal, setIsEditingGoal] = useState(false);
   const [manualMinutes, setManualMinutes] = useState('');
   const [showManual, setShowManual] = useState(false);
+  const [selectedDay, setSelectedDay] = useState<DailyData | null>(null);
   const timerRef = useRef<number | null>(null);
 
   useEffect(() => {
-    const saved = localStorage.getItem('rev_hist');
+    const saved = localStorage.getItem('rev_hist_v2');
     const savedGoal = localStorage.getItem('daily_goal');
     if (savedGoal) setDailyGoal(parseInt(savedGoal));
 
     if (saved) {
       const parsed = JSON.parse(saved);
       setHistory(parsed);
-      const today = new Date().toISOString().split('T')[0];
-      const entry = parsed.find((d: DailyData) => d.date === today);
-      if (entry) setTodayMinutes(entry.minutes);
+      updateTodayTotal(parsed);
     } else {
-      // Professional mock data for first launch
-      const mock = [];
-      for (let i = 6; i >= 0; i--) {
-        const d = new Date();
-        d.setDate(d.getDate() - i);
-        mock.push({ 
-          date: d.toISOString().split('T')[0], 
-          minutes: i === 0 ? 0 : Math.floor(Math.random() * 180) + 60 
-        });
+      // Legacy check or initial launch
+      const legacy = localStorage.getItem('rev_hist');
+      if (legacy) {
+        const parsedLegacy = JSON.parse(legacy);
+        const migrated: DailyData[] = parsedLegacy.map((d: any) => ({
+          date: d.date,
+          categories: { Revision: d.minutes || 0, Lectures: 0, Supervisions: 0 }
+        }));
+        setHistory(migrated);
+        updateTodayTotal(migrated);
+        localStorage.setItem('rev_hist_v2', JSON.stringify(migrated));
+        localStorage.removeItem('rev_hist');
+      } else {
+        const mock: DailyData[] = [];
+        for (let i = 6; i >= 0; i--) {
+          const d = new Date();
+          d.setDate(d.getDate() - i);
+          const rev = i === 0 ? 0 : Math.floor(Math.random() * 120) + 30;
+          const lec = i === 0 ? 0 : Math.floor(Math.random() * 60);
+          mock.push({ 
+            date: d.toISOString().split('T')[0], 
+            categories: { Revision: rev, Lectures: lec, Supervisions: 0 }
+          });
+        }
+        setHistory(mock);
+        updateTodayTotal(mock);
+        localStorage.setItem('rev_hist_v2', JSON.stringify(mock));
       }
-      setHistory(mock);
-      localStorage.setItem('rev_hist', JSON.stringify(mock));
     }
   }, []);
+
+  const updateTodayTotal = (hist: DailyData[]) => {
+    const today = new Date().toISOString().split('T')[0];
+    const entry = hist.find(d => d.date === today);
+    if (entry) {
+      const total = Object.values(entry.categories).reduce((a, b) => a + b, 0);
+      setTodayMinutes(total);
+    }
+  };
 
   useEffect(() => {
     if (isActive) {
@@ -61,13 +89,22 @@ const App: React.FC = () => {
   const addMinutes = (mins: number) => {
     const today = new Date().toISOString().split('T')[0];
     const next = [...history];
-    const idx = next.findIndex(d => d.date === today);
-    if (idx > -1) next[idx].minutes += mins;
-    else next.push({ date: today, minutes: mins });
+    let idx = next.findIndex(d => d.date === today);
+    
+    if (idx === -1) {
+      next.push({ 
+        date: today, 
+        categories: { Revision: 0, Lectures: 0, Supervisions: 0 } 
+      });
+      idx = next.length - 1;
+    }
+
+    next[idx].categories[activeCategory] += mins;
+    
     const trimmed = next.slice(-7);
     setHistory(trimmed);
-    localStorage.setItem('rev_hist', JSON.stringify(trimmed));
-    setTodayMinutes(trimmed.find(d => d.date === today)?.minutes || 0);
+    localStorage.setItem('rev_hist_v2', JSON.stringify(trimmed));
+    updateTodayTotal(trimmed);
   };
 
   const handleManualAdd = () => {
@@ -103,13 +140,19 @@ const App: React.FC = () => {
 
   const radius = 135;
   const circ = 2 * Math.PI * radius;
-  const off = circ - Math.min((seconds / 60) / 300, 1) * circ;
+  const off = circ - Math.min((seconds / 60) / MAX_TIMER_MINUTES, 1) * circ;
   const dProg = Math.min(todayMinutes / dailyGoal, 1);
+
+  const chartData = history.map(d => ({
+    day: new Date(d.date).toLocaleDateString('en-US', { weekday: 'narrow' }),
+    total: Object.values(d.categories).reduce((a, b) => a + b, 0),
+    raw: d
+  }));
 
   return (
     <div className="app-container">
       <header className="app-header">
-        <h1 className="academic-title">Academic tracker</h1>
+        <h1 className="academic-title">Academic Tracker</h1>
         <div className="date-display">{new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}</div>
       </header>
 
@@ -143,7 +186,7 @@ const App: React.FC = () => {
           </button>
           
           <button className="manual-log-btn" onClick={() => setShowManual(!showManual)}>
-            {showManual ? 'Cancel' : '+ Log minutes'}
+            {showManual ? 'Cancel' : '+ Log'}
           </button>
         </div>
       </main>
@@ -164,6 +207,13 @@ const App: React.FC = () => {
       <section className="progress-section">
         <div className="progress-labels">
           <span>Daily Progress</span>
+          <span className="progress-value">{Math.round(dProg * 100)}%</span>
+        </div>
+        <div className="flat-progress-track">
+          <div className="flat-progress-fill" style={{ width: `${dProg * 100}%` }} />
+        </div>
+        <div className="today-total-row">
+          <span className="today-total">{Math.floor(todayMinutes / 60)}h {todayMinutes % 60}m completed</span>
           {isEditingGoal ? (
             <input 
               type="number" 
@@ -174,29 +224,64 @@ const App: React.FC = () => {
               defaultValue={dailyGoal}
             />
           ) : (
-            <span className="progress-value" onClick={() => setIsEditingGoal(true)}>{Math.round(dProg * 100)}%</span>
+            <span className="goal-label" onClick={() => setIsEditingGoal(true)}>Goal: {Math.floor(dailyGoal / 60)}h</span>
           )}
-        </div>
-        <div className="flat-progress-track">
-          <div className="flat-progress-fill" style={{ width: `${dProg * 100}%` }} />
-        </div>
-        <div className="today-total-row">
-          <span className="today-total">{Math.floor(todayMinutes / 60)}h {todayMinutes % 60}m completed</span>
-          <span className="goal-label" onClick={() => setIsEditingGoal(true)}>Goal: {Math.floor(dailyGoal / 60)}h</span>
         </div>
       </section>
 
       <footer className="history-section">
         <div className="chart-container">
           <ResponsiveContainer width="100%" height={50}>
-            <BarChart data={history.map(d => ({ d: new Date(d.date).toLocaleDateString('en-US', { weekday: 'narrow' }), m: d.minutes }))}>
-              <Bar dataKey="m" radius={[2, 2, 0, 0]}>
-                {history.map((_, i) => <Cell key={i} fill={i === history.length - 1 ? '#007AFF' : '#D0E3FF'} />)}
+            <BarChart 
+              data={chartData} 
+              onClick={(data: any) => {
+                if (data && data.activePayload) {
+                  setSelectedDay(data.activePayload[0].payload.raw);
+                }
+              }}
+            >
+              <Bar dataKey="total" radius={[2, 2, 0, 0]}>
+                {chartData.map((_entry, index) => (
+                  <Cell 
+                    key={`cell-${index}`} 
+                    fill={index === chartData.length - 1 ? '#007AFF' : '#D0E3FF'} 
+                    style={{ cursor: 'pointer' }}
+                  />
+                ))}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
+        <div className="chart-labels">
+          {chartData.map((d, i) => (
+            <span key={i} className="chart-day-label">{d.day}</span>
+          ))}
+        </div>
       </footer>
+
+      {selectedDay && (
+        <div className="ios-popup-overlay" onClick={() => setSelectedDay(null)}>
+          <div className="ios-popup-card" onClick={e => e.stopPropagation()}>
+            <div className="popup-header">
+              <h3>{new Date(selectedDay.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</h3>
+              <button className="close-popup" onClick={() => setSelectedDay(null)}>×</button>
+            </div>
+            <div className="popup-body">
+              <div className="popup-total-row">
+                <span className="total-label">Total Pursuit</span>
+                <span className="total-val">{Math.floor(Object.values(selectedDay.categories).reduce((a,b)=>a+b,0) / 60)}h {Object.values(selectedDay.categories).reduce((a,b)=>a+b,0) % 60}m</span>
+              </div>
+              <div className="popup-divider" />
+              {CATEGORIES.map(cat => (
+                <div key={cat} className="popup-cat-row">
+                  <span className="cat-label">{cat}</span>
+                  <span className="cat-val">{Math.floor(selectedDay.categories[cat] / 60)}h {selectedDay.categories[cat] % 60}m</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
