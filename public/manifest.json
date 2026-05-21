@@ -1,0 +1,20 @@
+{
+  "name": "Revision Tracker",
+  "short_name": "Revision",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F0F7FF",
+  "theme_color": "#F0F7FF",
+  "icons": [
+    {
+      "src": "vite.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "vite.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}
