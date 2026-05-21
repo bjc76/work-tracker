@@ -18,10 +18,17 @@ const App: React.FC = () => {
   const [isActive, setIsActive] = useState(false);
   const [history, setHistory] = useState<DailyData[]>([]);
   const [todayMinutes, setTodayMinutes] = useState(0);
+  const [dailyGoal, setDailyGoal] = useState(240); // 4 hours default
+  const [isEditingGoal, setIsEditingGoal] = useState(false);
+  const [manualMinutes, setManualMinutes] = useState('');
+  const [showManual, setShowManual] = useState(false);
   const timerRef = useRef<number | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('rev_hist');
+    const savedGoal = localStorage.getItem('daily_goal');
+    if (savedGoal) setDailyGoal(parseInt(savedGoal));
+
     if (saved) {
       const parsed = JSON.parse(saved);
       setHistory(parsed);
@@ -51,23 +58,40 @@ const App: React.FC = () => {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [isActive]);
 
+  const addMinutes = (mins: number) => {
+    const today = new Date().toISOString().split('T')[0];
+    const next = [...history];
+    const idx = next.findIndex(d => d.date === today);
+    if (idx > -1) next[idx].minutes += mins;
+    else next.push({ date: today, minutes: mins });
+    const trimmed = next.slice(-7);
+    setHistory(trimmed);
+    localStorage.setItem('rev_hist', JSON.stringify(trimmed));
+    setTodayMinutes(trimmed.find(d => d.date === today)?.minutes || 0);
+  };
+
+  const handleManualAdd = () => {
+    const mins = parseInt(manualMinutes);
+    if (!isNaN(mins) && mins > 0) {
+      addMinutes(mins);
+      setManualMinutes('');
+      setShowManual(false);
+    }
+  };
+
   const toggle = () => {
     if (isActive) {
       const mins = Math.floor(seconds / 60);
-      if (mins > 0) {
-        const today = new Date().toISOString().split('T')[0];
-        const next = [...history];
-        const idx = next.findIndex(d => d.date === today);
-        if (idx > -1) next[idx].minutes += mins;
-        else next.push({ date: today, minutes: mins });
-        const trimmed = next.slice(-7);
-        setHistory(trimmed);
-        localStorage.setItem('rev_hist', JSON.stringify(trimmed));
-        setTodayMinutes(trimmed.find(d => d.date === today)?.minutes || 0);
-      }
+      if (mins > 0) addMinutes(mins);
       setIsActive(false);
       setSeconds(0);
     } else setIsActive(true);
+  };
+
+  const updateGoal = (g: number) => {
+    setDailyGoal(g);
+    localStorage.setItem('daily_goal', g.toString());
+    setIsEditingGoal(false);
   };
 
   const format = (s: number) => {
@@ -80,18 +104,24 @@ const App: React.FC = () => {
   const radius = 100;
   const circ = 2 * Math.PI * radius;
   const off = circ - Math.min((seconds / 60) / 300, 1) * circ;
-  const dProg = Math.min(todayMinutes / 240, 1);
+  const dProg = Math.min(todayMinutes / dailyGoal, 1);
 
   return (
     <div className="app-container">
       <header className="app-header">
-        <h1 className="academic-title">Academic Pursuit</h1>
+        <h1 className="academic-title">Academic tracker</h1>
         <div className="date-display">{new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}</div>
       </header>
 
-      <div className="category-scroller">
+      <div className="segmented-control">
         {CATEGORIES.map(c => (
-          <button key={c} className={`category-pill ${activeCategory === c ? 'active' : ''}`} onClick={() => setActiveCategory(c)}>{c}</button>
+          <button 
+            key={c} 
+            className={`segment-btn ${activeCategory === c ? 'active' : ''}`} 
+            onClick={() => setActiveCategory(c)}
+          >
+            {c}
+          </button>
         ))}
       </div>
 
@@ -104,22 +134,54 @@ const App: React.FC = () => {
           <div className="time-display-container">
             <div className="active-category-label">{activeCategory}</div>
             <div className="time-string">{format(seconds)}</div>
-            <button className={`timer-action-btn ${isActive ? 'stop' : 'start'}`} onClick={toggle}>
-              {isActive ? <Square size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
-            </button>
+            <div className="timer-actions">
+              <button className={`timer-action-btn ${isActive ? 'stop' : 'start'}`} onClick={toggle}>
+                {isActive ? <Square size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
+              </button>
+              <button className="manual-log-btn" onClick={() => setShowManual(!showManual)}>
+                {showManual ? 'Cancel' : '+ Log'}
+              </button>
+            </div>
           </div>
         </div>
       </main>
 
+      {showManual && (
+        <div className="manual-input-bar">
+          <input 
+            type="number" 
+            placeholder="Min" 
+            value={manualMinutes} 
+            onChange={e => setManualMinutes(e.target.value)}
+            className="manual-input"
+          />
+          <button onClick={handleManualAdd} className="add-btn">Add</button>
+        </div>
+      )}
+
       <section className="progress-section">
         <div className="progress-labels">
           <span>Daily Progress</span>
-          <span>{Math.round(dProg * 100)}%</span>
+          {isEditingGoal ? (
+            <input 
+              type="number" 
+              className="goal-input"
+              autoFocus
+              onBlur={e => updateGoal(parseInt(e.target.value) || 240)}
+              onKeyDown={e => e.key === 'Enter' && updateGoal(parseInt((e.target as HTMLInputElement).value) || 240)}
+              defaultValue={dailyGoal}
+            />
+          ) : (
+            <span className="progress-value" onClick={() => setIsEditingGoal(true)}>{Math.round(dProg * 100)}%</span>
+          )}
         </div>
         <div className="flat-progress-track">
           <div className="flat-progress-fill" style={{ width: `${dProg * 100}%` }} />
         </div>
-        <div className="today-total">{Math.floor(todayMinutes / 60)}h {todayMinutes % 60}m completed</div>
+        <div className="today-total-row">
+          <span className="today-total">{Math.floor(todayMinutes / 60)}h {todayMinutes % 60}m completed</span>
+          <span className="goal-label" onClick={() => setIsEditingGoal(true)}>Goal: {Math.floor(dailyGoal / 60)}h</span>
+        </div>
       </section>
 
       <footer className="history-section">
