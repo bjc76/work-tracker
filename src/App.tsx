@@ -98,7 +98,7 @@ const App: React.FC = () => {
           Revision: 0,
           Lectures: 0,
           Supervisions: 0,
-          ...existing.categories
+          ...(existing.categories as Partial<Record<Category, number>>)
         }
       } : { 
         date: dateStr, 
@@ -163,7 +163,7 @@ const App: React.FC = () => {
             Revision: 0,
             Lectures: 0,
             Supervisions: 0,
-            ...existing.categories
+            ...(existing.categories as Partial<Record<Category, number>>)
           }
         } : { 
           date: dateStr, 
