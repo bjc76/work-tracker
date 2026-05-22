@@ -10,7 +10,7 @@ import { Play, Square } from 'lucide-react';
 import BeerGlass from './BeerGlass';
 import './App.css';
 
-type Category = 'Supervisions' | 'Lectures' | 'Revision';
+type Category = 'Supervisions' | 'Lectures' | 'Revision' | 'Labs';
 interface DailyData { 
   date: string; 
   categories: Record<Category, number>;
