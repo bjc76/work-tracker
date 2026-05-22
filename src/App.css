@@ -212,18 +212,19 @@
   justify-content: center;
 }
 
-.beer-overlay {
+.beer-status-overlay {
   position: absolute;
-  top: 55%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-}
-
-.beer-overlay .time-string {
-  font-size: 40px; /* Smaller for beer glass */
-  color: rgba(0, 0, 0, 0.6);
-  text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+  bottom: 40px;
+  right: 40px;
+  z-index: 40;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(8px);
+  padding: 8px;
+  border-radius: 50%;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .timer-svg {

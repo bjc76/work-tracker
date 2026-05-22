@@ -77,7 +77,10 @@ const App: React.FC = () => {
   const [viewMode, setViewMode] = useState<'circle' | 'beer'>('circle');
   const [history, setHistory] = useState<DailyData[]>([]);
   const [todayMinutes, setTodayMinutes] = useState(0);
-  const [dailyGoal, setDailyGoal] = useState(240); // 4 hours default
+  const [dailyGoal, setDailyGoal] = useState(() => {
+    const savedGoal = localStorage.getItem('daily_goal');
+    return savedGoal ? parseInt(savedGoal) : 240;
+  });
   const [isEditingGoal, setIsEditingGoal] = useState(false);
   
   // Manual Log State
@@ -88,10 +91,17 @@ const App: React.FC = () => {
   const [selectedDay, setSelectedDay] = useState<DailyData | null>(null);
   const timerRef = useRef<number | null>(null);
 
+  const updateTodayTotal = (hist: DailyData[]) => {
+    const today = new Date().toISOString().split('T')[0];
+    const entry = hist.find(d => d.date === today);
+    if (entry) {
+      const total = Object.values(entry.categories).reduce((a, b) => a + b, 0);
+      setTodayMinutes(total);
+    }
+  };
+
   useEffect(() => {
     const saved = localStorage.getItem('rev_hist_v2');
-    const savedGoal = localStorage.getItem('daily_goal');
-    if (savedGoal) setDailyGoal(parseInt(savedGoal));
 
     let finalHistory: DailyData[] = [];
     if (saved) {
@@ -123,15 +133,6 @@ const App: React.FC = () => {
     updateTodayTotal(syncedHistory);
     localStorage.setItem('rev_hist_v2', JSON.stringify(syncedHistory));
   }, []);
-
-  const updateTodayTotal = (hist: DailyData[]) => {
-    const today = new Date().toISOString().split('T')[0];
-    const entry = hist.find(d => d.date === today);
-    if (entry) {
-      const total = Object.values(entry.categories).reduce((a, b) => a + b, 0);
-      setTodayMinutes(total);
-    }
-  };
 
   useEffect(() => {
     if (isActive && startTime) {
@@ -226,16 +227,18 @@ const App: React.FC = () => {
 
   return (
     <div className="app-container">
-      <div className="user-id-label">bjc76</div>
+      <div className="user-id-label">BC</div>
       <header className="app-header">
-        <div className="header-top">
-          <h1 className="academic-title">Milly work harder</h1>
+        <div>
           <button 
             className="view-toggle-btn"
             onClick={() => setViewMode(prev => prev === 'circle' ? 'beer' : 'circle')}
           >
             {viewMode === 'circle' ? '🍺' : '⭕️'}
           </button>
+        </div>
+        <div className="header-top">
+          <h1 className="academic-title">Milly work harder</h1>
         </div>
         <div className="date-display">{new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}</div>
       </header>
@@ -268,26 +271,23 @@ const App: React.FC = () => {
             }
           }}>
             {viewMode === 'circle' ? (
-              <div className="circular-timer-container">
-                <svg className="timer-svg" viewBox="0 0 300 300">
-                  <circle className="timer-track" cx="150" cy="150" r={radius} strokeWidth="5" />
-                  <circle className="timer-progress" cx="150" cy="150" r={radius} strokeWidth="5" strokeDasharray={circ} style={{ strokeDashoffset: off }} strokeLinecap="round" />
-                </svg>
-                <div className="time-display-container">
-                  <div className="time-string">{format(seconds)}</div>
-                  <div className={`timer-status-icon ${isActive ? 'active' : ''}`}>
-                    {isActive ? <Square size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" style={{ marginLeft: '4px' }} />}
-                  </div>
+            <div className="circular-timer-container">
+              <svg className="timer-svg" viewBox="0 0 300 300">
+                <circle className="timer-track" cx="150" cy="150" r={radius} strokeWidth="5" />
+                <circle className="timer-progress" cx="150" cy="150" r={radius} strokeWidth="5" strokeDasharray={circ} style={{ strokeDashoffset: off }} strokeLinecap="round" />
+              </svg>
+              <div className="time-display-container">
+                <div className="time-string">{format(seconds)}</div>
+                <div className={`timer-status-icon ${isActive ? 'active' : ''}`}>
+                  {isActive ? <Square size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" style={{ marginLeft: '4px' }} />}
                 </div>
               </div>
+            </div>
             ) : (
               <div className="beer-timer-container">
-                <BeerGlass progress={beerProgress} isActive={isActive} />
-                <div className="time-display-container beer-overlay">
-                  <div className="time-string">{format(seconds)}</div>
-                  <div className={`timer-status-icon ${isActive ? 'active' : ''}`}>
-                    {isActive ? <Square size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" style={{ marginLeft: '4px' }} />}
-                  </div>
+                <BeerGlass progress={beerProgress} isActive={isActive} seconds={seconds} />
+                <div className={`timer-status-icon beer-status-overlay ${isActive ? 'active' : ''}`}>
+                  {isActive ? <Square size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" style={{ marginLeft: '4px' }} />}
                 </div>
               </div>
             )}
