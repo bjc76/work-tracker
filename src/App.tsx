@@ -225,7 +225,7 @@ const App: React.FC = () => {
     <div className="app-container">
       <div className="user-id-label">bjc76</div>
       <header className="app-header">
-        <h1 className="academic-title">Academic Tracker</h1>
+        <h1 className="academic-title">Milly work harder</h1>
         <div className="date-display">{new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}</div>
       </header>
 
