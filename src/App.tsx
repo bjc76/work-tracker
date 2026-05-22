@@ -206,6 +206,24 @@ const App: React.FC = () => {
     setShowManual(false);
   };
 
+  const toggleTimer = () => {
+    if (isActive) {
+      const mins = Math.floor(seconds / 60);
+      if (mins > 0) addMinutes(mins);
+      setIsActive(false);
+      setStartTime(null);
+      setSeconds(0);
+      localStorage.removeItem('timer_active');
+      localStorage.removeItem('timer_start_time');
+    } else {
+      const now = Date.now();
+      setIsActive(true);
+      setStartTime(now);
+      localStorage.setItem('timer_active', 'true');
+      localStorage.setItem('timer_start_time', now.toString());
+    }
+  };
+
   const format = (s: number) => {
     const h = Math.floor(s / 3600);
     const m = Math.floor((s % 3600) / 60);
@@ -229,7 +247,8 @@ const App: React.FC = () => {
     <div className="app-container">
       <div className="user-id-label">BC</div>
       <header className="app-header">
-        <div>
+        <div className="header-top-row">
+          <h1 className="academic-title">Milly work harder</h1>
           <button 
             className="view-toggle-btn"
             onClick={() => setViewMode(prev => prev === 'circle' ? 'beer' : 'circle')}
@@ -237,10 +256,7 @@ const App: React.FC = () => {
             {viewMode === 'circle' ? '🍺' : '⭕️'}
           </button>
         </div>
-        <div className="header-top">
-          <h1 className="academic-title">Milly work harder</h1>
-        </div>
-        <div className="date-display">{new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}</div>
+        <div className="date-display">{new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
       </header>
 
       <div className="segmented-control">
@@ -253,48 +269,35 @@ const App: React.FC = () => {
 
       <main className="timer-section">
         <div className="timer-wrapper">
-          <button className="timer-control-surface" onClick={() => {
-            if (isActive) {
-              const mins = Math.floor(seconds / 60);
-              if (mins > 0) addMinutes(mins);
-              setIsActive(false);
-              setStartTime(null);
-              setSeconds(0);
-              localStorage.removeItem('timer_active');
-              localStorage.removeItem('timer_start_time');
-            } else {
-              const now = Date.now();
-              setIsActive(true);
-              setStartTime(now);
-              localStorage.setItem('timer_active', 'true');
-              localStorage.setItem('timer_start_time', now.toString());
-            }
-          }}>
+          <div className="timer-control-surface">
             {viewMode === 'circle' ? (
-            <div className="circular-timer-container">
-              <svg className="timer-svg" viewBox="0 0 300 300">
-                <circle className="timer-track" cx="150" cy="150" r={radius} strokeWidth="5" />
-                <circle className="timer-progress" cx="150" cy="150" r={radius} strokeWidth="5" strokeDasharray={circ} style={{ strokeDashoffset: off }} strokeLinecap="round" />
-              </svg>
-              <div className="time-display-container">
-                <div className="time-string">{format(seconds)}</div>
-                <div className={`timer-status-icon ${isActive ? 'active' : ''}`}>
-                  {isActive ? <Square size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" style={{ marginLeft: '4px' }} />}
+              <button className="circular-timer-button" onClick={toggleTimer}>
+                <div className="circular-timer-container">
+                  <svg className="timer-svg" viewBox="0 0 300 300">
+                    <circle className="timer-track" cx="150" cy="150" r={radius} strokeWidth="5" />
+                    <circle className="timer-progress" cx="150" cy="150" r={radius} strokeWidth="5" strokeDasharray={circ} style={{ strokeDashoffset: off }} strokeLinecap="round" />
+                  </svg>
+                  <div className="time-display-container">
+                    <div className="time-string">{format(seconds)}</div>
+                    <div className={`timer-status-icon ${isActive ? 'active' : ''}`}>
+                      {isActive ? <Square size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" style={{ marginLeft: '4px' }} />}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
+              </button>
             ) : (
               <div className="beer-timer-container">
-                <BeerGlass progress={beerProgress} isActive={isActive} seconds={seconds} />
-                <div className={`timer-status-icon beer-status-overlay ${isActive ? 'active' : ''}`}>
+                <BeerGlass progress={beerProgress} isActive={isActive} seconds={seconds} onTap={toggleTimer} />
+                <div className={`timer-status-icon beer-status-overlay ${isActive ? 'active' : ''}`} onClick={toggleTimer}>
                   {isActive ? <Square size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" style={{ marginLeft: '4px' }} />}
                 </div>
               </div>
             )}
-          </button>
+          </div>
           <button className="manual-log-btn" onClick={() => setShowManual(true)}>+ Log</button>
         </div>
       </main>
+
 
       <section className="progress-section">
         <div className="progress-labels">
@@ -327,26 +330,26 @@ const App: React.FC = () => {
 
       <footer className="history-section">
         <div className="chart-container">
-          <ResponsiveContainer width="100%" height={70}>
-            <BarChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 20 }}>
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 20 }}>
               <XAxis 
                 dataKey="day" 
                 axisLine={false} 
                 tickLine={false} 
-                tick={{ fontSize: 10, fill: '#8E8E93', fontWeight: 600 }}
-                dy={10}
+                tick={{ fontSize: 12, fill: '#8E8E93', fontWeight: 700 }}
+                dy={12}
               />
               <Bar 
                 dataKey="total" 
-                radius={[4, 4, 0, 0]} 
-                minPointSize={10}
+                radius={[6, 6, 0, 0]} 
+                minPointSize={4}
                 onClick={(data: any) => setSelectedDay(data.raw)}
               >
                 {chartData.map((_, index) => (
                   <Cell 
                     key={`cell-${index}`} 
-                    fill={index === chartData.length - 1 ? '#007AFF' : '#D0E3FF'} 
-                    style={{ cursor: 'pointer' }}
+                    fill={index === chartData.length - 1 ? '#007AFF' : '#D1E4FF'} 
+                    style={{ cursor: 'pointer', transition: 'fill 0.3s ease' }}
                   />
                 ))}
               </Bar>

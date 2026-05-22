@@ -1,15 +1,15 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useEffect, useState } from 'react';
 import './BeerGlass.css';
 
 interface BeerGlassProps {
   progress: number; // 0 to 1
   isActive: boolean;
   seconds: number;
+  onTap?: () => void;
 }
 
-const BeerGlass: React.FC<BeerGlassProps> = ({ progress, isActive, seconds }) => {
-  // progress 0 is empty, 1 is full
-  // We want a little bit of foam at the top even when full
+const BeerGlass: React.FC<BeerGlassProps> = ({ progress, isActive, seconds, onTap }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const beerHeight = progress * 100;
   const foamHeight = progress > 0 ? Math.min(15, 5 + progress * 15) : 0;
   
@@ -26,7 +26,6 @@ const BeerGlass: React.FC<BeerGlassProps> = ({ progress, isActive, seconds }) =>
 
   const time = formatTime(seconds);
 
-  // Memoize bubbles to avoid Math.random() in render (react-hooks/purity)
   const bubbles = useMemo(() => {
     return [...Array(8)].map((_, i) => ({
       id: i,
@@ -37,48 +36,136 @@ const BeerGlass: React.FC<BeerGlassProps> = ({ progress, isActive, seconds }) =>
     }));
   }, []);
 
+  // Fluid Simulation
+  useEffect(() => {
+    if (!canvasRef.current) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let animationFrameId: number;
+    const particles: any[] = [];
+    
+    const animate = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      if (isActive) {
+        // Generate particles
+        for (let i = 0; i < 3; i++) {
+          particles.push({
+            x: canvas.width / 2 + (Math.random() - 0.5) * 4,
+            y: 0,
+            vx: (Math.random() - 0.5) * 1,
+            vy: 4 + Math.random() * 2,
+            size: 3 + Math.random() * 3,
+            life: 1
+          });
+        }
+      }
+
+      // Update and draw particles
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life -= 0.01;
+
+        const targetY = canvas.height - (beerHeight * (canvas.height / 100));
+        
+        if (p.y >= targetY) {
+          p.life = 0; // "splashed"
+        }
+
+        if (p.life <= 0) {
+          particles.splice(i, 1);
+          continue;
+        }
+
+        ctx.fillStyle = `rgba(251, 191, 36, ${p.life})`;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Glow effect for stream
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = '#fbbf24';
+      }
+
+      animationFrameId = requestAnimationFrame(animate);
+    };
+
+    animate();
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [isActive, beerHeight]);
+
   return (
     <div className="beer-glass-container">
-      {/* Aesthetic Beer Tap */}
-      <div className={`beer-tap-pro ${isActive ? 'active' : ''}`}>
-        <svg viewBox="0 0 60 60" className="tap-svg">
+      {/* Proper Beer Tap */}
+      <div className={`beer-tap-pro ${isActive ? 'active' : ''}`} onClick={onTap}>
+        <svg viewBox="0 0 100 120" className="tap-svg">
           <defs>
-            <linearGradient id="metalGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" style={{ stopColor: '#9ca3af', stopOpacity: 1 }} />
-              <stop offset="50%" style={{ stopColor: '#f3f4f6', stopOpacity: 1 }} />
-              <stop offset="100%" style={{ stopColor: '#4b5563', stopOpacity: 1 }} />
+            <linearGradient id="tapMetalGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" style={{ stopColor: '#71717a', stopOpacity: 1 }} />
+              <stop offset="30%" style={{ stopColor: '#e4e4e7', stopOpacity: 1 }} />
+              <stop offset="60%" style={{ stopColor: '#a1a1aa', stopOpacity: 1 }} />
+              <stop offset="100%" style={{ stopColor: '#3f3f46', stopOpacity: 1 }} />
             </linearGradient>
-            <linearGradient id="handleGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" style={{ stopColor: '#1f2937', stopOpacity: 1 }} />
+            <linearGradient id="tapHandleGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" style={{ stopColor: '#18181b', stopOpacity: 1 }} />
               <stop offset="100%" style={{ stopColor: '#000000', stopOpacity: 1 }} />
             </linearGradient>
+            <filter id="tapShadow" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur in="SourceAlpha" stdDeviation="2" />
+              <feOffset dx="1" dy="2" result="offsetblur" />
+              <feComponentTransfer>
+                <feFuncA type="linear" slope="0.3" />
+              </feComponentTransfer>
+              <feMerge>
+                <feMergeNode />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
           </defs>
           
-          {/* Base/Wall attachment */}
-          <rect x="0" y="20" width="10" height="20" rx="2" fill="url(#metalGradient)" />
+          {/* Mounting base */}
+          <rect x="10" y="40" width="12" height="40" rx="2" fill="url(#tapMetalGradient)" filter="url(#tapShadow)" />
           
-          {/* Main pipe */}
-          <path d="M10,25 L35,25 Q45,25 45,35 L45,45" fill="none" stroke="url(#metalGradient)" strokeWidth="8" strokeLinecap="round" />
+          {/* The Shank */}
+          <rect x="22" y="50" width="15" height="15" fill="url(#tapMetalGradient)" />
           
-          {/* Nozzle end */}
-          <rect x="40" y="42" width="10" height="6" rx="1" fill="url(#metalGradient)" />
+          {/* Main Body / Faucet Body */}
+          <path 
+            d="M37,45 L65,45 Q75,45 75,55 L75,85 L60,85 L60,58 Q60,55 57,55 L37,55 Z" 
+            fill="url(#tapMetalGradient)" 
+            filter="url(#tapShadow)"
+          />
           
-          {/* Handle Base */}
-          <circle cx="25" cy="25" r="5" fill="url(#metalGradient)" />
+          {/* Spout / Nozzle */}
+          <rect x="62" y="85" width="10" height="15" rx="1" fill="#52525b" />
+          <rect x="61" y="98" width="12" height="4" rx="1" fill="url(#tapMetalGradient)" />
           
-          {/* Handle */}
+          {/* Collar */}
+          <rect x="42" y="42" width="6" height="20" rx="1" fill="#3f3f46" />
+
+          {/* Handle Assembly */}
           <g className="tap-handle-group">
-            <rect x="22" y="5" width="6" height="20" rx="3" fill="url(#handleGradient)" />
-            <circle cx="25" cy="5" r="4" fill="#111827" />
+            {/* Pivot Point */}
+            <circle cx="45" cy="45" r="7" fill="url(#tapMetalGradient)" />
+            {/* Handle Rod */}
+            <rect x="42" y="10" width="6" height="30" rx="3" fill="url(#tapHandleGradient)" />
+            {/* Top Knob */}
+            <circle cx="45" cy="8" r="10" fill="#09090b" />
+            <circle cx="45" cy="8" r="4" fill="rgba(255,255,255,0.1)" />
           </g>
         </svg>
-        {isActive && (
-          <div className="beer-stream-container">
-            <div className="beer-stream-main" />
-            <div className="beer-stream-glow" />
-            <div className="beer-stream-bubbles" />
-          </div>
-        )}
+
+        {/* Fluid Canvas Overlay */}
+        <canvas 
+          ref={canvasRef} 
+          width={40} 
+          height={160} 
+          className="fluid-canvas"
+        />
       </div>
 
       <div className="glass-wrapper">
@@ -95,15 +182,14 @@ const BeerGlass: React.FC<BeerGlassProps> = ({ progress, isActive, seconds }) =>
             </filter>
           </defs>
 
-          {/* Glass Outline - More Stylish Shape */}
+          {/* Glass Outline */}
           <path 
             d="M15,5 L85,5 L78,140 Q77,148 70,148 L30,148 Q23,148 22,140 Z" 
-            fill="rgba(255, 255, 255, 0.15)" 
-            stroke="rgba(255, 255, 255, 0.4)" 
-            strokeWidth="1.5"
+            fill="rgba(255, 255, 255, 0.1)" 
+            stroke="rgba(255, 255, 255, 0.3)" 
+            strokeWidth="2"
           />
 
-          {/* Beer Liquid */}
           <clipPath id="glassClip">
             <path d="M15,5 L85,5 L78,140 Q77,148 70,148 L30,148 Q23,148 22,140 Z" />
           </clipPath>
@@ -118,7 +204,6 @@ const BeerGlass: React.FC<BeerGlassProps> = ({ progress, isActive, seconds }) =>
               className="beer-liquid"
             />
             
-            {/* Foam / Head - Layered for better look */}
             <rect 
               x="0" 
               y={150 - (beerHeight * 1.4) - foamHeight} 
@@ -132,11 +217,10 @@ const BeerGlass: React.FC<BeerGlassProps> = ({ progress, isActive, seconds }) =>
               y={150 - (beerHeight * 1.4) - (foamHeight * 0.7)} 
               width="100" 
               height={foamHeight * 0.7} 
-              fill="rgba(255, 255, 255, 0.5)"
+              fill="rgba(255, 255, 255, 0.4)"
               className="beer-foam-overlay"
             />
 
-            {/* Surface Movement / Wave */}
             {progress > 0 && (
               <g className={`beer-surface-group ${isActive ? 'pouring' : 'swilling'}`}>
                 <path
@@ -149,7 +233,6 @@ const BeerGlass: React.FC<BeerGlassProps> = ({ progress, isActive, seconds }) =>
               </g>
             )}
 
-            {/* Bubbles - Stable via memoization */}
             {progress > 0 && (
               <g className="bubbles-group">
                 {bubbles.map((b) => (
@@ -162,12 +245,9 @@ const BeerGlass: React.FC<BeerGlassProps> = ({ progress, isActive, seconds }) =>
             )}
           </g>
 
-          {/* Glass Reflection */}
-          <path d="M22,15 L28,15 L25,135 Q25,140 30,140" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="2" strokeLinecap="round" />
-          <path d="M78,20 L75,20 L72,60" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="1" strokeLinecap="round" />
+          <path d="M22,15 L28,15 L25,135 Q25,140 30,140" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="2" strokeLinecap="round" />
         </svg>
 
-        {/* Vertical Timer Overlay */}
         <div className="vertical-timer">
           <div className="timer-unit">
             <span className="timer-val">{time.h}</span>
