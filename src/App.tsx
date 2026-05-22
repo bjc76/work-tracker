@@ -7,6 +7,7 @@ import {
   Cell 
 } from 'recharts';
 import { Play, Square } from 'lucide-react';
+import BeerGlass from './BeerGlass';
 import './App.css';
 
 type Category = 'Supervisions' | 'Lectures' | 'Revision';
@@ -73,6 +74,7 @@ const App: React.FC = () => {
     }
     return 0;
   });
+  const [viewMode, setViewMode] = useState<'circle' | 'beer'>('circle');
   const [history, setHistory] = useState<DailyData[]>([]);
   const [todayMinutes, setTodayMinutes] = useState(0);
   const [dailyGoal, setDailyGoal] = useState(240); // 4 hours default
@@ -214,6 +216,7 @@ const App: React.FC = () => {
   const circ = 2 * Math.PI * radius;
   const off = circ - Math.min((seconds / 60) / MAX_TIMER_MINUTES, 1) * circ;
   const dProg = Math.min(todayMinutes / dailyGoal, 1);
+  const beerProgress = Math.min((seconds / 60) / MAX_TIMER_MINUTES, 1);
 
   const chartData = history.map(d => ({
     day: new Date(d.date).toLocaleDateString('en-US', { weekday: 'narrow' }),
@@ -225,7 +228,15 @@ const App: React.FC = () => {
     <div className="app-container">
       <div className="user-id-label">bjc76</div>
       <header className="app-header">
-        <h1 className="academic-title">Milly work harder</h1>
+        <div className="header-top">
+          <h1 className="academic-title">Milly work harder</h1>
+          <button 
+            className="view-toggle-btn"
+            onClick={() => setViewMode(prev => prev === 'circle' ? 'beer' : 'circle')}
+          >
+            {viewMode === 'circle' ? '🍺' : '⭕️'}
+          </button>
+        </div>
         <div className="date-display">{new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}</div>
       </header>
 
@@ -256,18 +267,30 @@ const App: React.FC = () => {
               localStorage.setItem('timer_start_time', now.toString());
             }
           }}>
-            <div className="circular-timer-container">
-              <svg className="timer-svg" viewBox="0 0 300 300">
-                <circle className="timer-track" cx="150" cy="150" r={radius} strokeWidth="5" />
-                <circle className="timer-progress" cx="150" cy="150" r={radius} strokeWidth="5" strokeDasharray={circ} style={{ strokeDashoffset: off }} strokeLinecap="round" />
-              </svg>
-              <div className="time-display-container">
-                <div className="time-string">{format(seconds)}</div>
-                <div className={`timer-status-icon ${isActive ? 'active' : ''}`}>
-                  {isActive ? <Square size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" style={{ marginLeft: '4px' }} />}
+            {viewMode === 'circle' ? (
+              <div className="circular-timer-container">
+                <svg className="timer-svg" viewBox="0 0 300 300">
+                  <circle className="timer-track" cx="150" cy="150" r={radius} strokeWidth="5" />
+                  <circle className="timer-progress" cx="150" cy="150" r={radius} strokeWidth="5" strokeDasharray={circ} style={{ strokeDashoffset: off }} strokeLinecap="round" />
+                </svg>
+                <div className="time-display-container">
+                  <div className="time-string">{format(seconds)}</div>
+                  <div className={`timer-status-icon ${isActive ? 'active' : ''}`}>
+                    {isActive ? <Square size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" style={{ marginLeft: '4px' }} />}
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="beer-timer-container">
+                <BeerGlass progress={beerProgress} isActive={isActive} />
+                <div className="time-display-container beer-overlay">
+                  <div className="time-string">{format(seconds)}</div>
+                  <div className={`timer-status-icon ${isActive ? 'active' : ''}`}>
+                    {isActive ? <Square size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" style={{ marginLeft: '4px' }} />}
+                  </div>
+                </div>
+              </div>
+            )}
           </button>
           <button className="manual-log-btn" onClick={() => setShowManual(true)}>+ Log</button>
         </div>

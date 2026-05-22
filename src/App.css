@@ -104,9 +104,29 @@
   font-weight: 600;
 }
 
-.app-header {
-  margin-top: 40px;
-  margin-bottom: 20px;
+.header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.view-toggle-btn {
+  background: var(--ios-light-blue);
+  border: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 20px;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+  transition: transform 0.2s;
+}
+
+.view-toggle-btn:active {
+  transform: scale(0.9);
 }
 
 .academic-title {
@@ -183,14 +203,27 @@
 .timer-control-surface:active {
   transform: scale(0.97);
 }
-
-.circular-timer-container {
+.circular-timer-container, .beer-timer-container {
   position: relative;
   width: 100%;
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.beer-overlay {
+  position: absolute;
+  top: 55%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.beer-overlay .time-string {
+  font-size: 40px; /* Smaller for beer glass */
+  color: rgba(0, 0, 0, 0.6);
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
 }
 
 .timer-svg {
