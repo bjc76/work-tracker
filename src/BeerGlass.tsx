@@ -50,15 +50,15 @@ const BeerGlass: React.FC<BeerGlassProps> = ({ progress, isActive, seconds, onTa
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       
       if (isActive) {
-        // Generate particles
-        for (let i = 0; i < 3; i++) {
+        // Generate particles - increased for continuous flow
+        for (let i = 0; i < 5; i++) {
           particles.push({
-            x: canvas.width / 2 + (Math.random() - 0.5) * 4,
+            x: canvas.width / 2 + (Math.random() - 0.5) * 6,
             y: 0,
-            vx: (Math.random() - 0.5) * 1,
-            vy: 4 + Math.random() * 2,
-            size: 3 + Math.random() * 3,
-            life: 1
+            vx: (Math.random() - 0.5) * 0.5,
+            vy: 6 + Math.random() * 2, // Faster flow
+            size: 4 + Math.random() * 2,
+            life: 1.5 // Longer life for continuous feel
           });
         }
       }
@@ -68,7 +68,7 @@ const BeerGlass: React.FC<BeerGlassProps> = ({ progress, isActive, seconds, onTa
         const p = particles[i];
         p.x += p.vx;
         p.y += p.vy;
-        p.life -= 0.01;
+        p.life -= 0.02;
 
         const targetY = canvas.height - (beerHeight * (canvas.height / 100));
         
@@ -81,13 +81,13 @@ const BeerGlass: React.FC<BeerGlassProps> = ({ progress, isActive, seconds, onTa
           continue;
         }
 
-        ctx.fillStyle = `rgba(251, 191, 36, ${p.life})`;
+        ctx.fillStyle = `rgba(251, 191, 36, ${Math.min(p.life, 0.8)})`;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
         ctx.fill();
         
         // Glow effect for stream
-        ctx.shadowBlur = 10;
+        ctx.shadowBlur = 5;
         ctx.shadowColor = '#fbbf24';
       }
 
@@ -140,7 +140,7 @@ const BeerGlass: React.FC<BeerGlassProps> = ({ progress, isActive, seconds, onTa
             filter="url(#tapShadow)"
           />
           
-          {/* Spout / Nozzle */}
+          {/* Spout / Nozzle - Flow should come from here (y=100ish) */}
           <rect x="62" y="85" width="10" height="15" rx="1" fill="#52525b" />
           <rect x="61" y="98" width="12" height="4" rx="1" fill="url(#tapMetalGradient)" />
           
@@ -176,18 +176,17 @@ const BeerGlass: React.FC<BeerGlassProps> = ({ progress, isActive, seconds, onTa
               <stop offset="50%" style={{ stopColor: '#fbbf24', stopOpacity: 1 }} />
               <stop offset="100%" style={{ stopColor: '#d97706', stopOpacity: 1 }} />
             </linearGradient>
-            <filter id="foamGlow">
-              <feGaussianBlur stdDeviation="1.5" result="blur" />
-              <feComposite in="SourceGraphic" in2="blur" operator="over" />
+            <filter id="glassReflection">
+              <feGaussianBlur stdDeviation="1" result="blur" />
             </filter>
           </defs>
 
-          {/* Glass Outline */}
+          {/* Glass Outline - Made more visible with stronger stroke and fill */}
           <path 
             d="M15,5 L85,5 L78,140 Q77,148 70,148 L30,148 Q23,148 22,140 Z" 
-            fill="rgba(255, 255, 255, 0.1)" 
-            stroke="rgba(255, 255, 255, 0.3)" 
-            strokeWidth="2"
+            fill="rgba(255, 255, 255, 0.15)" 
+            stroke="rgba(255, 255, 255, 0.6)" 
+            strokeWidth="3"
           />
 
           <clipPath id="glassClip">
@@ -227,7 +226,7 @@ const BeerGlass: React.FC<BeerGlassProps> = ({ progress, isActive, seconds, onTa
                   className="beer-surface-wave"
                   d={`M-10,${150 - (beerHeight * 1.4)} Q25,${150 - (beerHeight * 1.4) - (isActive ? 8 : 4)} 50,${150 - (beerHeight * 1.4)} T110,${150 - (beerHeight * 1.4)}`}
                   fill="none"
-                  stroke="rgba(255,255,255,0.6)"
+                  stroke="rgba(255,255,255,0.8)"
                   strokeWidth="2"
                 />
               </g>
@@ -245,7 +244,9 @@ const BeerGlass: React.FC<BeerGlassProps> = ({ progress, isActive, seconds, onTa
             )}
           </g>
 
-          <path d="M22,15 L28,15 L25,135 Q25,140 30,140" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="2" strokeLinecap="round" />
+          {/* Reflections to make it look more like glass */}
+          <path d="M22,15 L28,15 L25,135 Q25,140 30,140" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="2" strokeLinecap="round" />
+          <path d="M78,15 L72,15 L75,80" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="1.5" strokeLinecap="round" />
         </svg>
 
         <div className="vertical-timer">

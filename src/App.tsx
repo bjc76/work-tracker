@@ -15,7 +15,7 @@ interface DailyData {
   date: string; 
   categories: Record<Category, number>;
 }
-const CATEGORIES: Category[] = ['Supervisions', 'Lectures', 'Revision'];
+const CATEGORIES: Category[] = ['Supervisions', 'Lectures', 'Revision', 'Labs'];
 const MAX_TIMER_MINUTES = 120; // 2 hours for the visual circle
 
 // --- Helper for iOS Scroll Picker ---
@@ -121,11 +121,12 @@ const App: React.FC = () => {
           Revision: 0,
           Lectures: 0,
           Supervisions: 0,
+          Labs: 0,
           ...(existing.categories as Partial<Record<Category, number>>)
         }
       } : { 
         date: dateStr, 
-        categories: { Revision: 0, Lectures: 0, Supervisions: 0 } 
+        categories: { Revision: 0, Lectures: 0, Supervisions: 0, Labs: 0 } 
       });
     }
 
@@ -158,7 +159,7 @@ const App: React.FC = () => {
       if (idx === -1) {
         next.push({ 
           date: today, 
-          categories: { Revision: 0, Lectures: 0, Supervisions: 0 } 
+          categories: { Revision: 0, Lectures: 0, Supervisions: 0, Labs: 0 } 
         });
         idx = next.length - 1;
       }
@@ -181,11 +182,12 @@ const App: React.FC = () => {
             Revision: 0,
             Lectures: 0,
             Supervisions: 0,
+            Labs: 0,
             ...(existing.categories as Partial<Record<Category, number>>)
           }
         } : { 
           date: dateStr, 
-          categories: { Revision: 0, Lectures: 0, Supervisions: 0 } 
+          categories: { Revision: 0, Lectures: 0, Supervisions: 0, Labs: 0 } 
         });
       }
 
@@ -248,12 +250,12 @@ const App: React.FC = () => {
       <div className="user-id-label">BC</div>
       <header className="app-header">
         <div className="header-top-row">
-          <h1 className="academic-title">Milly work harder</h1>
+          <h1 className="academic-title">Windmill Word Harder</h1>
           <button 
             className="view-toggle-btn"
             onClick={() => setViewMode(prev => prev === 'circle' ? 'beer' : 'circle')}
           >
-            {viewMode === 'circle' ? '🍺' : '⭕️'}
+            🍺
           </button>
         </div>
         <div className="date-display">{new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
@@ -288,9 +290,6 @@ const App: React.FC = () => {
             ) : (
               <div className="beer-timer-container">
                 <BeerGlass progress={beerProgress} isActive={isActive} seconds={seconds} onTap={toggleTimer} />
-                <div className={`timer-status-icon beer-status-overlay ${isActive ? 'active' : ''}`} onClick={toggleTimer}>
-                  {isActive ? <Square size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" style={{ marginLeft: '4px' }} />}
-                </div>
               </div>
             )}
           </div>

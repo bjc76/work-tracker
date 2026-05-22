@@ -17,7 +17,7 @@
   box-sizing: border-box;
   background-color: var(--ios-bg);
   color: var(--ios-text);
-  overflow: hidden;
+  overflow-y: auto;
   position: relative;
 }
 
@@ -145,7 +145,7 @@
 
 .academic-title {
   font-family: "Georgia", serif;
-  font-size: 34px;
+  font-size: 28px;
   margin: 0;
   font-weight: 700;
   color: var(--ios-text);
