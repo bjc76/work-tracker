@@ -245,7 +245,15 @@ const App: React.FC = () => {
   useEffect(() => {
     if (isActive && startTime) {
       timerRef.current = window.setInterval(() => {
-        setSeconds(Math.floor((Date.now() - startTime) / 1000));
+        const newSeconds = Math.floor((Date.now() - startTime) / 1000);
+        
+        // Auto-increment progress every 60 seconds
+        setSeconds(prev => {
+          if (Math.floor(newSeconds / 60) > Math.floor(prev / 60)) {
+            addMinutes(1);
+          }
+          return newSeconds;
+        });
       }, 1000);
     } else if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -277,8 +285,7 @@ const App: React.FC = () => {
 
   const toggleTimer = () => {
     if (isActive) {
-      const mins = Math.floor(seconds / 60);
-      if (mins > 0) addMinutes(mins);
+      // No longer adding minutes here as they are added incrementally
       setIsActive(false); setStartTime(null); setSeconds(0);
       localStorage.removeItem('timer_active');
       localStorage.removeItem('timer_start_time');
