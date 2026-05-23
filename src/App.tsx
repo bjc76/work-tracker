@@ -121,7 +121,7 @@ const App: React.FC = () => {
       If it's late and they've done a lot, tell them to rest. If they've barely started, give them a gentle nudge.
       Focus on being concise and helpful.`;
 
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${API_KEY}`, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -135,8 +135,18 @@ const App: React.FC = () => {
         })
       });
 
-      if (response.status === 429) {
-        setAiSummary("API quota exceeded. Taking a break from AI feedback!");
+      console.log('AI Response Status:', response.status);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('AI API Error Details:', errorData);
+        if (response.status === 404) {
+          setAiSummary("AI model not found. Check your API key and model access.");
+        } else if (response.status === 429) {
+          setAiSummary("API quota exceeded. Taking a break from AI feedback!");
+        } else {
+          setAiSummary("Something went wrong with the AI coach.");
+        }
         return;
       }
 
