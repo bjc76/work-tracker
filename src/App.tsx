@@ -7,7 +7,6 @@ import {
   Cell 
 } from 'recharts';
 import { Play, Square } from 'lucide-react';
-import BeerGlass from './BeerGlass';
 import './App.css';
 
 type Category = 'Supervisions' | 'Lectures' | 'Revision' | 'Labs';
@@ -16,7 +15,7 @@ interface DailyData {
   categories: Record<Category, number>;
 }
 const CATEGORIES: Category[] = ['Supervisions', 'Lectures', 'Revision', 'Labs'];
-const MAX_TIMER_MINUTES = 120; // 2 hours for the visual circle
+const MAX_TIMER_MINUTES = 60; // 1 hour for the visual circle
 
 // --- Helper for iOS Scroll Picker ---
 const Picker: React.FC<{
@@ -74,14 +73,9 @@ const App: React.FC = () => {
     }
     return 0;
   });
-  const [viewMode, setViewMode] = useState<'circle' | 'beer'>('circle');
   const [history, setHistory] = useState<DailyData[]>([]);
   const [todayMinutes, setTodayMinutes] = useState(0);
-  const [dailyGoal, setDailyGoal] = useState(() => {
-    const savedGoal = localStorage.getItem('daily_goal');
-    return savedGoal ? parseInt(savedGoal) : 240;
-  });
-  const [isEditingGoal, setIsEditingGoal] = useState(false);
+  const [dailyGoal] = useState(480); // Fixed at 8 hours
   
   // Manual Log State
   const [showManual, setShowManual] = useState(false);
@@ -89,7 +83,80 @@ const App: React.FC = () => {
   const [manualM, setManualM] = useState(0);
 
   const [selectedDay, setSelectedDay] = useState<DailyData | null>(null);
+  const [aiSummary, setAiSummary] = useState<string>(() => localStorage.getItem('ai_summary') || '');
+  const [isAiLoading, setIsAiLoading] = useState(false);
   const timerRef = useRef<number | null>(null);
+
+  const getYesterdayMinutes = () => {
+    if (history.length < 2) return 0;
+    const yesterday = history[history.length - 2];
+    return Object.values(yesterday.categories).reduce((a, b) => a + b, 0);
+  };
+
+  const fetchAiSummary = async (force = false) => {
+    const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+    if (!API_KEY) return;
+
+    const lastFetch = parseInt(localStorage.getItem('ai_last_fetch') || '0');
+    const lastMins = parseInt(localStorage.getItem('ai_last_mins') || '0');
+    const now = Date.now();
+    
+    // Only fetch if forced, or 1 hour passed, or progress increased by 30 mins
+    if (!force && aiSummary && (now - lastFetch < 3600000) && (todayMinutes - lastMins < 30)) {
+      return;
+    }
+
+    setIsAiLoading(true);
+    try {
+      const yesterdayMins = getYesterdayMinutes();
+      
+      const prompt = `You are a helpful academic coach. 
+      Today's progress: ${todayMinutes} mins out of ${dailyGoal} mins goal.
+      Yesterday's progress: ${yesterdayMins} mins.
+      Current time: ${new Date().toLocaleTimeString()}.
+      
+      Give a very short (max 2 sentences), encouraging, and slightly witty comment about the user's progress. 
+      Consider how they are doing compared to yesterday and how much of the day is left. 
+      If it's late and they've done a lot, tell them to rest. If they've barely started, give them a gentle nudge.
+      Focus on being concise and helpful.`;
+
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.7,
+            topK: 40,
+            topP: 0.95,
+            maxOutputTokens: 60,
+          }
+        })
+      });
+
+      if (response.status === 429) {
+        setAiSummary("API quota exceeded. Taking a break from AI feedback!");
+        return;
+      }
+
+      const data = await response.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "Keep up the great work!";
+      setAiSummary(text);
+      localStorage.setItem('ai_summary', text);
+      localStorage.setItem('ai_last_fetch', now.toString());
+      localStorage.setItem('ai_last_mins', todayMinutes.toString());
+    } catch (error) {
+      console.error('AI Fetch Error:', error);
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (history.length > 0) {
+      fetchAiSummary();
+    }
+  }, [history, todayMinutes]);
 
   const updateTodayTotal = (hist: DailyData[]) => {
     const today = new Date().toISOString().split('T')[0];
@@ -164,11 +231,9 @@ const App: React.FC = () => {
         idx = next.length - 1;
       }
       
-      // Ensure the category exists and is a number
       const currentMins = next[idx].categories[activeCategory] || 0;
       next[idx].categories[activeCategory] = currentMins + mins;
       
-      // Resync to exactly 7 days
       const syncedHistory: DailyData[] = [];
       for (let i = 6; i >= 0; i--) {
         const d = new Date();
@@ -192,7 +257,6 @@ const App: React.FC = () => {
       }
 
       localStorage.setItem('rev_hist_v2', JSON.stringify(syncedHistory));
-      // Schedule update of today total after state update
       setTimeout(() => updateTodayTotal(syncedHistory), 0);
       return syncedHistory;
     });
@@ -237,7 +301,6 @@ const App: React.FC = () => {
   const circ = 2 * Math.PI * radius;
   const off = circ - Math.min((seconds / 60) / MAX_TIMER_MINUTES, 1) * circ;
   const dProg = Math.min(todayMinutes / dailyGoal, 1);
-  const beerProgress = Math.min((seconds / 60) / MAX_TIMER_MINUTES, 1);
 
   const chartData = history.map(d => ({
     day: new Date(d.date).toLocaleDateString('en-US', { weekday: 'narrow' }),
@@ -250,13 +313,7 @@ const App: React.FC = () => {
       <div className="user-id-label">BC</div>
       <header className="app-header">
         <div className="header-top-row">
-          <h1 className="academic-title">Windmill Word Harder</h1>
-          <button 
-            className="view-toggle-btn"
-            onClick={() => setViewMode(prev => prev === 'circle' ? 'beer' : 'circle')}
-          >
-            🍺
-          </button>
+          <h1 className="academic-title">Work Tracker</h1>
         </div>
         <div className="date-display">{new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
       </header>
@@ -272,31 +329,34 @@ const App: React.FC = () => {
       <main className="timer-section">
         <div className="timer-wrapper">
           <div className="timer-control-surface">
-            {viewMode === 'circle' ? (
-              <button className="circular-timer-button" onClick={toggleTimer}>
-                <div className="circular-timer-container">
-                  <svg className="timer-svg" viewBox="0 0 300 300">
-                    <circle className="timer-track" cx="150" cy="150" r={radius} strokeWidth="5" />
-                    <circle className="timer-progress" cx="150" cy="150" r={radius} strokeWidth="5" strokeDasharray={circ} style={{ strokeDashoffset: off }} strokeLinecap="round" />
-                  </svg>
-                  <div className="time-display-container">
-                    <div className="time-string">{format(seconds)}</div>
-                    <div className={`timer-status-icon ${isActive ? 'active' : ''}`}>
-                      {isActive ? <Square size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" style={{ marginLeft: '4px' }} />}
-                    </div>
+            <button className="circular-timer-button" onClick={toggleTimer}>
+              <div className="circular-timer-container">
+                <svg className="timer-svg" viewBox="0 0 300 300">
+                  <circle className="timer-track" cx="150" cy="150" r={radius} strokeWidth="5" />
+                  <circle className="timer-progress" cx="150" cy="150" r={radius} strokeWidth="5" strokeDasharray={circ} style={{ strokeDashoffset: off }} strokeLinecap="round" />
+                </svg>
+                <div className="time-display-container">
+                  <div className="time-string">{format(seconds)}</div>
+                  <div className={`timer-status-icon ${isActive ? 'active' : ''}`}>
+                    {isActive ? <Square size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" style={{ marginLeft: '4px' }} />}
                   </div>
                 </div>
-              </button>
-            ) : (
-              <div className="beer-timer-container">
-                <BeerGlass progress={beerProgress} isActive={isActive} seconds={seconds} onTap={toggleTimer} />
               </div>
-            )}
+            </button>
           </div>
           <button className="manual-log-btn" onClick={() => setShowManual(true)}>+ Log</button>
         </div>
       </main>
 
+      {aiSummary && (
+        <section className="ai-summary-card">
+          <div className="ai-header">
+            <span className="ai-label">Coach AI</span>
+            {isAiLoading && <div className="ai-pulse" />}
+          </div>
+          <p className="ai-text">{aiSummary}</p>
+        </section>
+      )}
 
       <section className="progress-section">
         <div className="progress-labels">
@@ -308,22 +368,7 @@ const App: React.FC = () => {
         </div>
         <div className="today-total-row">
           <span className="today-total">{Math.floor(todayMinutes / 60)}h {todayMinutes % 60}m completed</span>
-          {isEditingGoal ? (
-            <input 
-              type="number" 
-              className="goal-input"
-              autoFocus
-              onBlur={e => {
-                const g = parseInt(e.target.value) || 240;
-                setDailyGoal(g);
-                localStorage.setItem('daily_goal', g.toString());
-                setIsEditingGoal(false);
-              }}
-              defaultValue={dailyGoal}
-            />
-          ) : (
-            <span className="goal-label" onClick={() => setIsEditingGoal(true)}>Goal: {Math.floor(dailyGoal / 60)}h</span>
-          )}
+          <span className="goal-label">Goal: 8h</span>
         </div>
       </section>
 
