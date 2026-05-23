@@ -130,12 +130,15 @@ const App: React.FC = () => {
     setIsAiLoading(true);
     try {
       const yesterdayMins = getYesterdayMinutes();
+      const prevResponse = aiSummary && !aiSummary.includes('resting') && !aiSummary.includes('Quota') && !aiSummary.includes('Connection') 
+        ? ` Your previous comment was: "${aiSummary}"` 
+        : "";
       
-      let prompt = `You are a helpful academic coach. Today's progress: ${todayMinutes} mins out of ${dailyGoal} mins goal. Yesterday's progress: ${yesterdayMins} mins. Current time: ${new Date().toLocaleTimeString()}. Give 2 full, complete sentences of an encouraging but also criticaly honest if necessary and slightly witty comment about the user's progress. Use hours and minutes. Ensure you finish your thoughts.`;
+      let prompt = `You are a helpful academic coach. Today's progress: ${todayMinutes} mins out of ${dailyGoal} mins goal. Yesterday's progress: ${yesterdayMins} mins. ${prevResponse} Current time: ${new Date().toLocaleTimeString()}. Give 2 sentences of qualitative, critically honest, and slightly witty coaching. IMPORTANT: Avoid metaphors entirely. Do not just repeat the data (hours/minutes) as the user can already see them; instead, focus on the quality of their momentum and discipline.`;
 
       // Specific prompt for Yesterday Review (Start of day / No work yet)
       if (isNewDay && todayMinutes < 60) {
-        prompt = `You are a helpful academic coach. It's a new day. Yesterday the user completed ${yesterdayMins} mins of work. The daily goal is ${dailyGoal} mins. Give a brief (2 sentences) "Yesterday Review" summarizing their effort and a witty nudge for today. Use hours and minutes. Be honest about their productivity. Ensure you finish your thoughts.`;
+        prompt = `You are a helpful academic coach. It's a new day. Yesterday the user completed ${yesterdayMins} mins of work against a ${dailyGoal} min goal. ${prevResponse} Give 2 sentences of qualitative "Yesterday Review". IMPORTANT: Avoid metaphors entirely. Do not just repeat the data; provide an honest, witty assessment of their work pattern and a nudge for today.`;
       }
 
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${API_KEY}`, {
@@ -165,14 +168,18 @@ const App: React.FC = () => {
         localStorage.setItem('ai_last_work_mins_v5', todayMinutes.toString());
         localStorage.setItem('ai_last_date_v5', todayStr);
 
-        // PERSISTENCE: If this is the "Yesterday Review" (isNewDay), save it into yesterday's record
-        if (isNewDay && history.length >= 2) {
+        // PERSISTENCE: If this is the "Yesterday Review", save it into yesterday's record
+        const isYesterdayReview = isNewDay && todayMinutes < 60;
+        if (isYesterdayReview) {
           setHistory(prev => {
             const next = [...prev];
             const yesterdayIdx = next.length - 2;
             if (yesterdayIdx >= 0) {
-              next[yesterdayIdx] = { ...next[yesterdayIdx], summary: finalText };
-              localStorage.setItem('rev_hist_v2', JSON.stringify(next));
+              // Only save if yesterday doesn't already have a summary
+              if (!next[yesterdayIdx].summary) {
+                next[yesterdayIdx] = { ...next[yesterdayIdx], summary: finalText };
+                localStorage.setItem('rev_hist_v2', JSON.stringify(next));
+              }
             }
             return next;
           });
