@@ -109,16 +109,16 @@ const App: React.FC = () => {
     
     const isNewDay = todayStr !== lastFetchDate;
     const hasWorkedAnExtraHour = Math.floor(todayMinutes / 60) > Math.floor(lastFetchMins / 60);
-    const hasNoSummary = !aiSummary || aiSummary.includes('resting') || aiSummary.includes('power nap') || aiSummary.includes('cooling down');
+    const hasNoSummary = !aiSummary || aiSummary.includes('resting') || aiSummary.includes('power nap') || aiSummary.includes('breath') || aiSummary.includes('cooling') || aiSummary.includes('Quota');
 
     // Trigger if: No summary exists OR it's a new day OR we've hit a new hour milestone
     if (!force && !hasNoSummary && !isNewDay && !hasWorkedAnExtraHour) {
       return;
     }
 
-    // Strict backoff for 429s
-    if (!force && now < backoffUntil) {
-      if (hasNoSummary) setAiSummary("AI Coach is still cooling down. Please wait a few minutes.");
+    // Strict backoff for 429s (Reduced to 3 mins)
+    // Bypassed if we have NO summary yet, so we always try to get the first one
+    if (!force && !hasNoSummary && now < backoffUntil) {
       return;
     }
 
@@ -145,7 +145,8 @@ const App: React.FC = () => {
         });
       };
 
-      const modelsToTry = ['gemini-2.5-flash-lite'];
+      // Prioritizing the models we know work for you
+      const modelsToTry = ['gemini-2.0-flash-lite', 'gemini-flash-lite-latest', 'gemini-2.0-flash', 'gemini-flash-latest'];
       let finalText = "";
       let errorInfo = "";
 
@@ -177,9 +178,9 @@ const App: React.FC = () => {
         localStorage.setItem('ai_last_triggered_mins', todayMinutes.toString());
         localStorage.setItem('ai_last_triggered_date', todayStr);
       } else if (errorInfo.toLowerCase().includes('quota') || errorInfo.includes('429')) {
-        const cooldown = Date.now() + 600000; // 10 min cooldown
+        const cooldown = Date.now() + 180000; // 3 min cooldown
         localStorage.setItem('ai_backoff_until_v3', cooldown.toString());
-        setAiSummary(`AI Quota: ${errorInfo}. Please try again in 10 mins.`);
+        setAiSummary(`AI Quota reached. Please wait 3 mins.`);
       } else {
         setAiSummary(`AI Coach is resting. (${errorInfo})`);
       }
