@@ -94,81 +94,65 @@ const App: React.FC = () => {
   };
 
   const fetchAiSummary = async (force = false) => {
-    console.log('fetchAiSummary called. Force:', force);
     const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-    
-    if (!API_KEY) {
-      console.warn('AI Coach: No API Key found in environment variables (VITE_GEMINI_API_KEY)');
-      return;
-    }
+    if (!API_KEY) return;
 
     const lastFetch = parseInt(localStorage.getItem('ai_last_fetch') || '0');
     const lastMins = parseInt(localStorage.getItem('ai_last_mins') || '0');
     const now = Date.now();
     
-    console.log('AI Throttle Check:', {
-      hasSummary: !!aiSummary,
-      timeSinceLast: now - lastFetch,
-      minsSinceLast: todayMinutes - lastMins
-    });
-
-    // Only fetch if forced, or 1 hour passed, or progress increased by 30 mins
+    // Throttle: 1 hour OR 30 mins progress
     if (!force && aiSummary && (now - lastFetch < 3600000) && (todayMinutes - lastMins < 30)) {
-      console.log('AI Coach: Throttled. Skipping fetch.');
       return;
     }
 
-    console.log('AI Coach: Proceeding to fetch summary...');
     setIsAiLoading(true);
     try {
       const yesterdayMins = getYesterdayMinutes();
-      
-      const prompt = `You are a helpful academic coach. 
-      Today's progress: ${todayMinutes} mins out of ${dailyGoal} mins goal.
-      Yesterday's progress: ${yesterdayMins} mins.
-      Current time: ${new Date().toLocaleTimeString()}.
-      If less than 1 hour of progress has been made today, make the summary focus on yesterday's progress.
-      Bear in mind that the target for every day is 8 hours, but anything above 5 hours is considered good. 
-      Give 2 sentences of an encouraging and slightly witty comment about the user's progress. 
-      Consider how they are doing compared to yesterday and how much of the day is left. 
-      If it's late and they've done a lot, tell them to rest. If they've barely started, give them a gentle nudge.
-      Focus on being concise and helpful.`;
+      const prompt = `You are a helpful academic coach. Today's progress: ${todayMinutes} mins out of ${dailyGoal} mins goal. Yesterday's progress: ${yesterdayMins} mins. Current time: ${new Date().toLocaleTimeString()}. Give 2 full, complete sentences of an encouraging and slightly witty comment about the user's progress. Ensure you finish your thoughts.`;
 
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.7,
-            topK: 40,
-            topP: 0.95,
-            maxOutputTokens: 60,
+      const callGemini = async (model: string) => {
+        return fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.7, maxOutputTokens: 150 }
+          })
+        });
+      };
+
+      // Use the specific models from your available list
+      const modelsToTry = ['gemini-2.0-flash', 'gemini-flash-latest', 'gemini-2.0-flash-lite'];
+      let finalText = "";
+      let isRateLimited = false;
+
+      for (const model of modelsToTry) {
+        try {
+          const response = await callGemini(model);
+          if (response.ok) {
+            const data = await response.json();
+            finalText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+            if (finalText) break;
+          } else if (response.status === 429) {
+            isRateLimited = true;
+            break;
           }
-        })
-      });
-
-      console.log('AI Response Status:', response.status);
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('AI API Error Details:', errorData);
-        if (response.status === 404) {
-          setAiSummary("AI model not found. Check your API key and model access.");
-        } else if (response.status === 429) {
-          setAiSummary("API quota exceeded. Taking a break from AI feedback!");
-        } else {
-          setAiSummary("Something went wrong with the AI coach.");
+        } catch (e) {
+          console.warn(`Model ${model} failed`, e);
         }
-        return;
       }
 
-      const data = await response.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "Keep up the great work!";
-      setAiSummary(text);
-      localStorage.setItem('ai_summary', text);
-      localStorage.setItem('ai_last_fetch', now.toString());
-      localStorage.setItem('ai_last_mins', todayMinutes.toString());
+      if (isRateLimited) {
+        setAiSummary("AI Coach is catching its breath (Rate limit reached). Try again in a few minutes!");
+      } else if (finalText) {
+        setAiSummary(finalText);
+        localStorage.setItem('ai_summary', finalText);
+        localStorage.setItem('ai_last_fetch', Date.now().toString());
+        localStorage.setItem('ai_last_mins', todayMinutes.toString());
+      } else {
+        setAiSummary("AI Coach is taking a power nap.");
+      }
     } catch (error) {
       console.error('AI Fetch Error:', error);
     } finally {
@@ -193,11 +177,8 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const saved = localStorage.getItem('rev_hist_v2');
-
     let finalHistory: DailyData[] = [];
-    if (saved) {
-      finalHistory = JSON.parse(saved);
-    }
+    if (saved) finalHistory = JSON.parse(saved);
 
     const syncedHistory: DailyData[] = [];
     for (let i = 6; i >= 0; i--) {
@@ -209,10 +190,7 @@ const App: React.FC = () => {
       syncedHistory.push(existing ? {
         ...existing,
         categories: {
-          Revision: 0,
-          Lectures: 0,
-          Supervisions: 0,
-          Labs: 0,
+          Revision: 0, Lectures: 0, Supervisions: 0, Labs: 0,
           ...(existing.categories as Partial<Record<Category, number>>)
         }
       } : { 
@@ -239,76 +217,36 @@ const App: React.FC = () => {
 
   const addMinutes = (mins: number) => {
     const today = new Date().toISOString().split('T')[0];
-    
     setHistory(prev => {
-      const next = prev.map(d => ({
-        ...d,
-        categories: { ...d.categories }
-      }));
-      
+      const next = prev.map(d => ({ ...d, categories: { ...d.categories } }));
       let idx = next.findIndex(d => d.date === today);
       if (idx === -1) {
-        next.push({ 
-          date: today, 
-          categories: { Revision: 0, Lectures: 0, Supervisions: 0, Labs: 0 } 
-        });
+        next.push({ date: today, categories: { Revision: 0, Lectures: 0, Supervisions: 0, Labs: 0 } });
         idx = next.length - 1;
       }
-      
-      const currentMins = next[idx].categories[activeCategory] || 0;
-      next[idx].categories[activeCategory] = currentMins + mins;
-      
-      const syncedHistory: DailyData[] = [];
-      for (let i = 6; i >= 0; i--) {
-        const d = new Date();
-        d.setDate(d.getDate() - i);
-        const dateStr = d.toISOString().split('T')[0];
-        const existing = next.find(h => h.date === dateStr);
-        
-        syncedHistory.push(existing ? {
-          ...existing,
-          categories: {
-            Revision: 0,
-            Lectures: 0,
-            Supervisions: 0,
-            Labs: 0,
-            ...(existing.categories as Partial<Record<Category, number>>)
-          }
-        } : { 
-          date: dateStr, 
-          categories: { Revision: 0, Lectures: 0, Supervisions: 0, Labs: 0 } 
-        });
-      }
-
-      localStorage.setItem('rev_hist_v2', JSON.stringify(syncedHistory));
-      setTimeout(() => updateTodayTotal(syncedHistory), 0);
-      return syncedHistory;
+      next[idx].categories[activeCategory] = (next[idx].categories[activeCategory] || 0) + mins;
+      localStorage.setItem('rev_hist_v2', JSON.stringify(next));
+      setTimeout(() => updateTodayTotal(next), 0);
+      return next;
     });
   };
 
   const handleManualAdd = () => {
     const total = manualH * 60 + manualM;
-    if (total > 0) {
-      addMinutes(total);
-    }
-    setManualH(0);
-    setManualM(0);
-    setShowManual(false);
+    if (total > 0) addMinutes(total);
+    setManualH(0); setManualM(0); setShowManual(false);
   };
 
   const toggleTimer = () => {
     if (isActive) {
       const mins = Math.floor(seconds / 60);
       if (mins > 0) addMinutes(mins);
-      setIsActive(false);
-      setStartTime(null);
-      setSeconds(0);
+      setIsActive(false); setStartTime(null); setSeconds(0);
       localStorage.removeItem('timer_active');
       localStorage.removeItem('timer_start_time');
     } else {
       const now = Date.now();
-      setIsActive(true);
-      setStartTime(now);
+      setIsActive(true); setStartTime(now);
       localStorage.setItem('timer_active', 'true');
       localStorage.setItem('timer_start_time', now.toString());
     }
@@ -368,9 +306,12 @@ const App: React.FC = () => {
               </div>
             </button>
           </div>
-          <button className="manual-log-btn" onClick={() => setShowManual(true)}>+ Log</button>
         </div>
       </main>
+
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '10px', marginTop: '-20px' }}>
+        <button className="manual-log-btn" onClick={() => setShowManual(true)}>+ Log</button>
+      </div>
 
       {aiSummary && (
         <section className="ai-summary-card">
