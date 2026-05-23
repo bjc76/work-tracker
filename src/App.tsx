@@ -114,13 +114,14 @@ const App: React.FC = () => {
       Today's progress: ${todayMinutes} mins out of ${dailyGoal} mins goal.
       Yesterday's progress: ${yesterdayMins} mins.
       Current time: ${new Date().toLocaleTimeString()}.
-      
-      Give a very short (max 2 sentences), encouraging, and slightly witty comment about the user's progress. 
+      If less than 1 hour of progress has been made today, make the summary focus on yesterday's progress.
+      Bear in mind that the target for every day is 8 hours, but anything above 5 hours is considered good. 
+      Give 2 sentences of an encouraging and slightly witty comment about the user's progress. 
       Consider how they are doing compared to yesterday and how much of the day is left. 
       If it's late and they've done a lot, tell them to rest. If they've barely started, give them a gentle nudge.
       Focus on being concise and helpful.`;
 
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${API_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
