@@ -109,15 +109,17 @@ const App: React.FC = () => {
     
     const isNewDay = todayStr !== lastFetchDate;
     const hasWorkedAnExtraHour = todayMinutes >= (lastFetchMins + 60);
-    const isErrorState = !aiSummary || aiSummary.includes('Quota') || aiSummary.includes('resting') || aiSummary.includes('power nap') || aiSummary.includes('breath') || aiSummary.includes('cooling');
+    const isEmpty = !aiSummary;
+    const isErrorState = aiSummary.includes('Quota') || aiSummary.includes('resting') || aiSummary.includes('power nap') || aiSummary.includes('breath') || aiSummary.includes('cooling');
 
-    // Trigger if: No summary, new day, or worked another hour
-    const needsUpdate = isErrorState || isNewDay || hasWorkedAnExtraHour;
+    // Trigger if: Empty, error, new day, or worked another hour
+    const needsUpdate = isEmpty || isErrorState || isNewDay || hasWorkedAnExtraHour;
 
     if (!force && !needsUpdate) return;
 
-    // Throttle: Don't retry more than once every 5 minutes if it's an automatic check
-    if (!force && (now - lastAttemptTime < 300000)) return;
+    // Throttle: Don't retry more than once every 5 minutes
+    // Bypassed if summary is LITERALLY EMPTY (to ensure it shows up on first load)
+    if (!force && !isEmpty && (now - lastAttemptTime < 300000)) return;
 
     localStorage.setItem('ai_last_attempt_v4', now.toString());
     isFetchingRef.current = true;
@@ -132,37 +134,24 @@ const App: React.FC = () => {
         prompt = `You are a helpful academic coach. It's a new day. Yesterday the user completed ${yesterdayMins} mins of work. The daily goal is ${dailyGoal} mins. Give a very brief (2 sentences) "Daily Summary" of their work yesterday and a witty encouragement for today. Ensure you finish your thoughts.`;
       }
 
-      const callGemini = async (model: string) => {
-        return fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.7, maxOutputTokens: 150 }
-          })
-        });
-      };
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${API_KEY}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.7, maxOutputTokens: 150 }
+        })
+      });
 
-      const modelsToTry = ['gemini-2.5-flash-lite'];
       let finalText = "";
       let errorInfo = "";
 
-      for (const model of modelsToTry) {
-        try {
-          const response = await callGemini(model);
-          if (response.ok) {
-            const data = await response.json();
-            finalText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-            if (finalText) break;
-          } else {
-            const errData = await response.json().catch(() => ({}));
-            errorInfo = errData.error?.message || response.statusText || `Status ${response.status}`;
-            if (response.status === 429) break;
-          }
-        } catch (e: any) { 
-          console.warn(e); 
-          errorInfo = e.message;
-        }
+      if (response.ok) {
+        const data = await response.json();
+        finalText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      } else {
+        const errData = await response.json().catch(() => ({}));
+        errorInfo = errData.error?.message || response.statusText || `Status ${response.status}`;
       }
 
       if (finalText) {
