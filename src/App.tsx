@@ -87,7 +87,6 @@ const App: React.FC = () => {
   const [isAiLoading, setIsAiLoading] = useState(false);
   
   const timerRef = useRef<number | null>(null);
-  const hasInitialTriggeredRef = useRef(false);
   const isFetchingRef = useRef(false);
 
   const getYesterdayMinutes = useCallback(() => {
@@ -103,16 +102,23 @@ const App: React.FC = () => {
 
     const backoffUntil = parseInt(localStorage.getItem('ai_backoff_until_v3') || '0', 10);
     const now = Date.now();
+    const todayStr = new Date().toISOString().split('T')[0];
     
-    // Safety check: Don't auto-fetch if we already have a summary from this hour
-    const lastFetch = parseInt(localStorage.getItem('ai_last_fetch_v3') || '0', 10);
-    if (!force && aiSummary && (now - lastFetch < 3600000) && !aiSummary.includes('limit')) {
+    const lastFetchMins = parseInt(localStorage.getItem('ai_last_triggered_mins') || '0', 10);
+    const lastFetchDate = localStorage.getItem('ai_last_triggered_date') || '';
+    
+    const isNewDay = todayStr !== lastFetchDate;
+    const hasWorkedAnExtraHour = Math.floor(todayMinutes / 60) > Math.floor(lastFetchMins / 60);
+    const hasNoSummary = !aiSummary || aiSummary.includes('resting') || aiSummary.includes('power nap') || aiSummary.includes('cooling down');
+
+    // Trigger if: No summary exists OR it's a new day OR we've hit a new hour milestone
+    if (!force && !hasNoSummary && !isNewDay && !hasWorkedAnExtraHour) {
       return;
     }
 
     // Strict backoff for 429s
     if (!force && now < backoffUntil) {
-      setAiSummary("AI Coach is still cooling down. Try Refresh in a few minutes.");
+      if (hasNoSummary) setAiSummary("AI Coach is still cooling down. Please wait a few minutes.");
       return;
     }
 
@@ -120,7 +126,13 @@ const App: React.FC = () => {
     setIsAiLoading(true);
     try {
       const yesterdayMins = getYesterdayMinutes();
-      const prompt = `You are a helpful academic coach. Today's progress: ${todayMinutes} mins out of ${dailyGoal} mins goal. Yesterday's progress: ${yesterdayMins} mins. Current time: ${new Date().toLocaleTimeString()}. Give 2 full, complete sentences of an encouraging and slightly witty comment about the user's progress. Ensure you finish your thoughts.`;
+      const isMorning = new Date().getHours() < 12;
+      
+      let prompt = `You are a helpful academic coach. Today's progress: ${todayMinutes} mins out of ${dailyGoal} mins goal. Yesterday's progress: ${yesterdayMins} mins. Current time: ${new Date().toLocaleTimeString()}. Give 2 full, complete sentences of an encouraging and slightly witty comment about the user's progress. Ensure you finish your thoughts.`;
+
+      if (isNewDay && isMorning) {
+        prompt = `You are a helpful academic coach. It's a new day. Yesterday the user completed ${yesterdayMins} mins of work. The daily goal is ${dailyGoal} mins. Give a very brief (2 sentences) "Daily Summary" of their work yesterday and a witty encouragement for today. Ensure you finish your thoughts.`;
+      }
 
       const callGemini = async (model: string) => {
         return fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`, {
@@ -133,7 +145,7 @@ const App: React.FC = () => {
         });
       };
 
-      const modelsToTry = ['gemini-2.5-flash-lite'];
+      const modelsToTry = ['gemini-2.0-flash-lite', 'gemini-flash-lite-latest', 'gemini-2.0-flash', 'gemini-flash-latest'];
       let finalText = "";
       let errorInfo = "";
 
@@ -162,6 +174,8 @@ const App: React.FC = () => {
         setAiSummary(finalText);
         localStorage.setItem('ai_summary_v3', finalText);
         localStorage.setItem('ai_last_fetch_v3', Date.now().toString());
+        localStorage.setItem('ai_last_triggered_mins', todayMinutes.toString());
+        localStorage.setItem('ai_last_triggered_date', todayStr);
       } else if (errorInfo.toLowerCase().includes('quota') || errorInfo.includes('429')) {
         const cooldown = Date.now() + 600000; // 10 min cooldown
         localStorage.setItem('ai_backoff_until_v3', cooldown.toString());
@@ -328,7 +342,7 @@ const App: React.FC = () => {
         </div>
       </main>
 
-      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '10px' }}>
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '10px', marginTop: '-20px' }}>
         <button className="manual-log-btn" onClick={() => setShowManual(true)}>+ Log</button>
       </div>
 
@@ -339,13 +353,6 @@ const App: React.FC = () => {
               <span className="ai-label">Coach AI</span>
               {isAiLoading && <div className="ai-pulse" />}
             </div>
-            <button 
-              className="ai-refresh-btn" 
-              onClick={() => fetchAiSummary(true)}
-              disabled={isAiLoading}
-            >
-              {isAiLoading ? '...' : 'Refresh'}
-            </button>
           </div>
           <p className="ai-text">{aiSummary}</p>
         </section>
@@ -430,34 +437,6 @@ const App: React.FC = () => {
                 <span>{Math.floor(Object.values(selectedDay.categories).reduce((a,b)=>a+b,0) / 60)}h {Object.values(selectedDay.categories).reduce((a,b)=>a+b,0) % 60}m</span>
               </div>
               <div className="popup-divider" />
-              {CATEGORIES.map(cat => (
-                <div key={cat} className="popup-cat-row">
-                  <span className="cat-label">{cat}</span>
-                  <span className="cat-val">{Math.floor(selectedDay.categories[cat] / 60)}h {selectedDay.categories[cat] % 60}m</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-export default App;
-s[cat] / 60)}h {selectedDay.categories[cat] % 60}m</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-export default App;
-divider" />
               {CATEGORIES.map(cat => (
                 <div key={cat} className="popup-cat-row">
                   <span className="cat-label">{cat}</span>
