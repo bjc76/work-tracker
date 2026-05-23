@@ -94,18 +94,31 @@ const App: React.FC = () => {
   };
 
   const fetchAiSummary = async (force = false) => {
+    console.log('fetchAiSummary called. Force:', force);
     const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-    if (!API_KEY) return;
+    
+    if (!API_KEY) {
+      console.warn('AI Coach: No API Key found in environment variables (VITE_GEMINI_API_KEY)');
+      return;
+    }
 
     const lastFetch = parseInt(localStorage.getItem('ai_last_fetch') || '0');
     const lastMins = parseInt(localStorage.getItem('ai_last_mins') || '0');
     const now = Date.now();
     
+    console.log('AI Throttle Check:', {
+      hasSummary: !!aiSummary,
+      timeSinceLast: now - lastFetch,
+      minsSinceLast: todayMinutes - lastMins
+    });
+
     // Only fetch if forced, or 1 hour passed, or progress increased by 30 mins
     if (!force && aiSummary && (now - lastFetch < 3600000) && (todayMinutes - lastMins < 30)) {
+      console.log('AI Coach: Throttled. Skipping fetch.');
       return;
     }
 
+    console.log('AI Coach: Proceeding to fetch summary...');
     setIsAiLoading(true);
     try {
       const yesterdayMins = getYesterdayMinutes();
