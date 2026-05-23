@@ -83,7 +83,7 @@ const App: React.FC = () => {
   const [manualM, setManualM] = useState(0);
 
   const [selectedDay, setSelectedDay] = useState<DailyData | null>(null);
-  const [aiSummary, setAiSummary] = useState<string>(() => localStorage.getItem('ai_summary_v3') || '');
+  const [aiSummary, setAiSummary] = useState<string>(() => localStorage.getItem('ai_summary_v4') || '');
   const [isAiLoading, setIsAiLoading] = useState(false);
   
   const timerRef = useRef<number | null>(null);
@@ -100,28 +100,26 @@ const App: React.FC = () => {
     const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
     if (!API_KEY) return;
 
-    const backoffUntil = parseInt(localStorage.getItem('ai_backoff_until_v3') || '0', 10);
     const now = Date.now();
     const todayStr = new Date().toISOString().split('T')[0];
     
-    const lastFetchMins = parseInt(localStorage.getItem('ai_last_triggered_mins') || '0', 10);
-    const lastFetchDate = localStorage.getItem('ai_last_triggered_date') || '';
+    const lastFetchMins = parseInt(localStorage.getItem('ai_last_triggered_mins_v4') || '0', 10);
+    const lastFetchDate = localStorage.getItem('ai_last_triggered_date_v4') || '';
+    const lastAttemptTime = parseInt(localStorage.getItem('ai_last_attempt_v4') || '0', 10);
     
     const isNewDay = todayStr !== lastFetchDate;
-    const hasWorkedAnExtraHour = Math.floor(todayMinutes / 60) > Math.floor(lastFetchMins / 60);
-    const hasNoSummary = !aiSummary || aiSummary.includes('resting') || aiSummary.includes('power nap') || aiSummary.includes('breath') || aiSummary.includes('cooling') || aiSummary.includes('Quota');
+    const hasWorkedAnExtraHour = todayMinutes >= (lastFetchMins + 60);
+    const isErrorState = !aiSummary || aiSummary.includes('Quota') || aiSummary.includes('resting') || aiSummary.includes('power nap') || aiSummary.includes('breath') || aiSummary.includes('cooling');
 
-    // Trigger if: No summary exists OR it's a new day OR we've hit a new hour milestone
-    if (!force && !hasNoSummary && !isNewDay && !hasWorkedAnExtraHour) {
-      return;
-    }
+    // Trigger if: No summary, new day, or worked another hour
+    const needsUpdate = isErrorState || isNewDay || hasWorkedAnExtraHour;
 
-    // Strict backoff for 429s (Reduced to 3 mins)
-    // Bypassed if we have NO summary yet, so we always try to get the first one
-    if (!force && !hasNoSummary && now < backoffUntil) {
-      return;
-    }
+    if (!force && !needsUpdate) return;
 
+    // Throttle: Don't retry more than once every 5 minutes if it's an automatic check
+    if (!force && (now - lastAttemptTime < 300000)) return;
+
+    localStorage.setItem('ai_last_attempt_v4', now.toString());
     isFetchingRef.current = true;
     setIsAiLoading(true);
     try {
@@ -145,7 +143,6 @@ const App: React.FC = () => {
         });
       };
 
-      // Prioritizing the models we know work for you
       const modelsToTry = ['gemini-2.0-flash-lite', 'gemini-flash-lite-latest', 'gemini-2.0-flash', 'gemini-flash-latest'];
       let finalText = "";
       let errorInfo = "";
@@ -156,10 +153,7 @@ const App: React.FC = () => {
           if (response.ok) {
             const data = await response.json();
             finalText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-            if (finalText) {
-              localStorage.removeItem('ai_backoff_until_v3');
-              break;
-            }
+            if (finalText) break;
           } else {
             const errData = await response.json().catch(() => ({}));
             errorInfo = errData.error?.message || response.statusText || `Status ${response.status}`;
@@ -173,14 +167,12 @@ const App: React.FC = () => {
 
       if (finalText) {
         setAiSummary(finalText);
-        localStorage.setItem('ai_summary_v3', finalText);
-        localStorage.setItem('ai_last_fetch_v3', Date.now().toString());
-        localStorage.setItem('ai_last_triggered_mins', todayMinutes.toString());
-        localStorage.setItem('ai_last_triggered_date', todayStr);
+        localStorage.setItem('ai_summary_v4', finalText);
+        localStorage.setItem('ai_last_fetch_v4', Date.now().toString());
+        localStorage.setItem('ai_last_triggered_mins_v4', todayMinutes.toString());
+        localStorage.setItem('ai_last_triggered_date_v4', todayStr);
       } else if (errorInfo.toLowerCase().includes('quota') || errorInfo.includes('429')) {
-        const cooldown = Date.now() + 180000; // 3 min cooldown
-        localStorage.setItem('ai_backoff_until_v3', cooldown.toString());
-        setAiSummary(`AI Quota reached. Please wait 3 mins.`);
+        setAiSummary(`AI Quota reached. Retrying automatically in 5 mins.`);
       } else {
         setAiSummary(`AI Coach is resting. (${errorInfo})`);
       }
