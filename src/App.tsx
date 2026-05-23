@@ -101,8 +101,14 @@ const App: React.FC = () => {
     const lastMins = parseInt(localStorage.getItem('ai_last_mins') || '0');
     const now = Date.now();
     
-    // Throttle: 1 hour OR 30 mins progress
-    if (!force && aiSummary && (now - lastFetch < 3600000) && (todayMinutes - lastMins < 30)) {
+    // Check if the current summary is a real summary or an error message
+    const isErrorOrPlaceholder = !aiSummary || 
+      aiSummary.includes('Rate limit reached') || 
+      aiSummary.includes('power nap') || 
+      aiSummary.includes('resting');
+
+    // Throttle only if we have a REAL summary and conditions are met
+    if (!force && !isErrorOrPlaceholder && (now - lastFetch < 3600000) && (todayMinutes - lastMins < 30)) {
       return;
     }
 
