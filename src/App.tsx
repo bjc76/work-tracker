@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   BarChart, 
   Bar, 
@@ -83,35 +83,40 @@ const App: React.FC = () => {
   const [manualM, setManualM] = useState(0);
 
   const [selectedDay, setSelectedDay] = useState<DailyData | null>(null);
-  const [aiSummary, setAiSummary] = useState<string>(() => localStorage.getItem('ai_summary') || '');
+  const [aiSummary, setAiSummary] = useState<string>(() => localStorage.getItem('ai_summary_v3') || '');
   const [isAiLoading, setIsAiLoading] = useState(false);
+  
   const timerRef = useRef<number | null>(null);
+  const hasInitialTriggeredRef = useRef(false);
+  const isFetchingRef = useRef(false);
 
-  const getYesterdayMinutes = () => {
+  const getYesterdayMinutes = useCallback(() => {
     if (history.length < 2) return 0;
     const yesterday = history[history.length - 2];
     return Object.values(yesterday.categories).reduce((a, b) => a + b, 0);
-  };
+  }, [history]);
 
-  const fetchAiSummary = async (force = false) => {
+  const fetchAiSummary = useCallback(async (force = false) => {
+    if (isFetchingRef.current) return;
     const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
     if (!API_KEY) return;
 
-    const lastFetch = parseInt(localStorage.getItem('ai_last_fetch') || '0');
-    const lastMins = parseInt(localStorage.getItem('ai_last_mins') || '0');
+    const backoffUntil = parseInt(localStorage.getItem('ai_backoff_until_v3') || '0', 10);
     const now = Date.now();
     
-    // Check if the current summary is a real summary or an error message
-    const isErrorOrPlaceholder = !aiSummary || 
-      aiSummary.includes('Rate limit reached') || 
-      aiSummary.includes('power nap') || 
-      aiSummary.includes('resting');
-
-    // Throttle only if we have a REAL summary and conditions are met
-    if (!force && !isErrorOrPlaceholder && (now - lastFetch < 3600000) && (todayMinutes - lastMins < 30)) {
+    // Safety check: Don't auto-fetch if we already have a summary from this hour
+    const lastFetch = parseInt(localStorage.getItem('ai_last_fetch_v3') || '0', 10);
+    if (!force && aiSummary && (now - lastFetch < 3600000) && !aiSummary.includes('limit')) {
       return;
     }
 
+    // Strict backoff for 429s
+    if (!force && now < backoffUntil) {
+      setAiSummary("AI Coach is still cooling down. Try Refresh in a few minutes.");
+      return;
+    }
+
+    isFetchingRef.current = true;
     setIsAiLoading(true);
     try {
       const yesterdayMins = getYesterdayMinutes();
@@ -128,10 +133,9 @@ const App: React.FC = () => {
         });
       };
 
-      // Use the specific models from your available list
-      const modelsToTry = ['gemini-2.0-flash', 'gemini-flash-latest', 'gemini-2.0-flash-lite'];
+      const modelsToTry = ['gemini-2.5-flash-lite'];
       let finalText = "";
-      let isRateLimited = false;
+      let errorInfo = "";
 
       for (const model of modelsToTry) {
         try {
@@ -139,38 +143,47 @@ const App: React.FC = () => {
           if (response.ok) {
             const data = await response.json();
             finalText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-            if (finalText) break;
-          } else if (response.status === 429) {
-            isRateLimited = true;
-            break;
+            if (finalText) {
+              localStorage.removeItem('ai_backoff_until_v3');
+              break;
+            }
+          } else {
+            const errData = await response.json().catch(() => ({}));
+            errorInfo = errData.error?.message || response.statusText || `Status ${response.status}`;
+            if (response.status === 429) break;
           }
-        } catch (e) {
-          console.warn(`Model ${model} failed`, e);
+        } catch (e: any) { 
+          console.warn(e); 
+          errorInfo = e.message;
         }
       }
 
-      if (isRateLimited) {
-        setAiSummary("AI Coach is catching its breath (Rate limit reached). Try again in a few minutes!");
-      } else if (finalText) {
+      if (finalText) {
         setAiSummary(finalText);
-        localStorage.setItem('ai_summary', finalText);
-        localStorage.setItem('ai_last_fetch', Date.now().toString());
-        localStorage.setItem('ai_last_mins', todayMinutes.toString());
+        localStorage.setItem('ai_summary_v3', finalText);
+        localStorage.setItem('ai_last_fetch_v3', Date.now().toString());
+      } else if (errorInfo.toLowerCase().includes('quota') || errorInfo.includes('429')) {
+        const cooldown = Date.now() + 600000; // 10 min cooldown
+        localStorage.setItem('ai_backoff_until_v3', cooldown.toString());
+        setAiSummary(`AI Quota: ${errorInfo}. Please try again in 10 mins.`);
       } else {
-        setAiSummary("AI Coach is taking a power nap.");
+        setAiSummary(`AI Coach is resting. (${errorInfo})`);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('AI Fetch Error:', error);
+      setAiSummary(`AI Connection Error. Check console.`);
     } finally {
       setIsAiLoading(false);
+      isFetchingRef.current = false;
     }
-  };
+  }, [aiSummary, todayMinutes, dailyGoal, getYesterdayMinutes]);
 
+  // Trigger on load, on new day, or on new hour milestone
   useEffect(() => {
     if (history.length > 0) {
       fetchAiSummary();
     }
-  }, [history, todayMinutes]);
+  }, [history, todayMinutes, fetchAiSummary]);
 
   const updateTodayTotal = (hist: DailyData[]) => {
     const today = new Date().toISOString().split('T')[0];
@@ -315,15 +328,24 @@ const App: React.FC = () => {
         </div>
       </main>
 
-      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '10px', marginTop: '-20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '10px' }}>
         <button className="manual-log-btn" onClick={() => setShowManual(true)}>+ Log</button>
       </div>
 
       {aiSummary && (
         <section className="ai-summary-card">
           <div className="ai-header">
-            <span className="ai-label">Coach AI</span>
-            {isAiLoading && <div className="ai-pulse" />}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span className="ai-label">Coach AI</span>
+              {isAiLoading && <div className="ai-pulse" />}
+            </div>
+            <button 
+              className="ai-refresh-btn" 
+              onClick={() => fetchAiSummary(true)}
+              disabled={isAiLoading}
+            >
+              {isAiLoading ? '...' : 'Refresh'}
+            </button>
           </div>
           <p className="ai-text">{aiSummary}</p>
         </section>
@@ -408,6 +430,34 @@ const App: React.FC = () => {
                 <span>{Math.floor(Object.values(selectedDay.categories).reduce((a,b)=>a+b,0) / 60)}h {Object.values(selectedDay.categories).reduce((a,b)=>a+b,0) % 60}m</span>
               </div>
               <div className="popup-divider" />
+              {CATEGORIES.map(cat => (
+                <div key={cat} className="popup-cat-row">
+                  <span className="cat-label">{cat}</span>
+                  <span className="cat-val">{Math.floor(selectedDay.categories[cat] / 60)}h {selectedDay.categories[cat] % 60}m</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default App;
+s[cat] / 60)}h {selectedDay.categories[cat] % 60}m</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default App;
+divider" />
               {CATEGORIES.map(cat => (
                 <div key={cat} className="popup-cat-row">
                   <span className="cat-label">{cat}</span>
