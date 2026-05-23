@@ -13,8 +13,10 @@ type Category = 'Supervisions' | 'Lectures' | 'Revision' | 'Labs';
 interface DailyData { 
   date: string; 
   categories: Record<Category, number>;
+  summary?: string;
 }
 const CATEGORIES: Category[] = ['Supervisions', 'Lectures', 'Revision', 'Labs'];
+const INITIAL_CATEGORIES: Record<Category, number> = { Revision: 0, Lectures: 0, Supervisions: 0, Labs: 0 };
 const MAX_TIMER_MINUTES = 60; // 1 hour for the visual circle
 
 // --- Helper for iOS Scroll Picker ---
@@ -83,7 +85,7 @@ const App: React.FC = () => {
   const [manualM, setManualM] = useState(0);
 
   const [selectedDay, setSelectedDay] = useState<DailyData | null>(null);
-  const [aiSummary, setAiSummary] = useState<string>(() => localStorage.getItem('ai_summary_v4') || '');
+  const [aiSummary, setAiSummary] = useState<string>(() => localStorage.getItem('ai_summary_v5') || '');
   const [isAiLoading, setIsAiLoading] = useState(false);
   
   const timerRef = useRef<number | null>(null);
@@ -92,7 +94,7 @@ const App: React.FC = () => {
   const getYesterdayMinutes = useCallback(() => {
     if (history.length < 2) return 0;
     const yesterday = history[history.length - 2];
-    return Object.values(yesterday.categories).reduce((a, b) => a + b, 0);
+    return Object.values(yesterday.categories).reduce((a, b) => (typeof b === 'number' ? a + b : a), 0);
   }, [history]);
 
   const fetchAiSummary = useCallback(async (force = false) => {
@@ -103,35 +105,37 @@ const App: React.FC = () => {
     const now = Date.now();
     const todayStr = new Date().toISOString().split('T')[0];
     
-    const lastFetchMins = parseInt(localStorage.getItem('ai_last_triggered_mins_v4') || '0', 10);
-    const lastFetchDate = localStorage.getItem('ai_last_triggered_date_v4') || '';
-    const lastAttemptTime = parseInt(localStorage.getItem('ai_last_attempt_v4') || '0', 10);
+    const lastFetchMins = parseInt(localStorage.getItem('ai_last_work_mins_v5') || '0', 10);
+    const lastFetchRealTime = parseInt(localStorage.getItem('ai_last_real_time_v5') || '0', 10);
+    const lastFetchDate = localStorage.getItem('ai_last_date_v5') || '';
     
     const isNewDay = todayStr !== lastFetchDate;
-    const hasWorkedAnExtraHour = todayMinutes >= (lastFetchMins + 60);
-    const isEmpty = !aiSummary;
-    const isErrorState = aiSummary.includes('Quota') || aiSummary.includes('resting') || aiSummary.includes('power nap') || aiSummary.includes('breath') || aiSummary.includes('cooling');
+    const hasWorkedAnotherHour = todayMinutes >= (lastFetchMins + 60);
+    const hasThreeRealHoursPassed = now >= (lastFetchRealTime + 10800000); // 3 hours in ms
+    const isInitialEmpty = !aiSummary || aiSummary.includes('resting') || aiSummary.includes('Quota');
 
-    // Trigger if: Empty, error, new day, or worked another hour
-    const needsUpdate = isEmpty || isErrorState || isNewDay || hasWorkedAnExtraHour;
+    // Automation Rules:
+    // 1. Initial Load (Empty)
+    // 2. New Day (to get Yesterday Review)
+    // 3. 1 Hour of active work progress
+    // 4. 3 Hours of real time (even if no work)
+    const needsUpdate = isInitialEmpty || isNewDay || hasWorkedAnotherHour || hasThreeRealHoursPassed;
 
     if (!force && !needsUpdate) return;
 
-    // Throttle: Don't retry more than once every 5 minutes
-    // Bypassed if summary is LITERALLY EMPTY (to ensure it shows up on first load)
-    if (!force && !isEmpty && (now - lastAttemptTime < 300000)) return;
+    // Safety: Don't retry more than once every 5 mins on error
+    if (!force && !isInitialEmpty && (now - lastFetchRealTime < 300000) && aiSummary.includes('Quota')) return;
 
-    localStorage.setItem('ai_last_attempt_v4', now.toString());
     isFetchingRef.current = true;
     setIsAiLoading(true);
     try {
       const yesterdayMins = getYesterdayMinutes();
-      const isMorning = new Date().getHours() < 12;
       
-      let prompt = `You are a helpful academic coach. Today's progress: ${todayMinutes} mins out of ${dailyGoal} mins goal. Yesterday's progress: ${yesterdayMins} mins. Current time: ${new Date().toLocaleTimeString()}. Give 2 full, complete sentences of an encouraging and slightly witty comment about the user's progress. Ensure you finish your thoughts.`;
+      let prompt = `You are a helpful academic coach. Today's progress: ${todayMinutes} mins out of ${dailyGoal} mins goal. Yesterday's progress: ${yesterdayMins} mins. Current time: ${new Date().toLocaleTimeString()}. Give 2 full, complete sentences of an encouraging but also criticaly honest if necessary and slightly witty comment about the user's progress. Use hours and minutes. Ensure you finish your thoughts.`;
 
-      if (isNewDay && isMorning) {
-        prompt = `You are a helpful academic coach. It's a new day. Yesterday the user completed ${yesterdayMins} mins of work. The daily goal is ${dailyGoal} mins. Give a very brief (2 sentences) "Daily Summary" of their work yesterday and a witty encouragement for today. Ensure you finish your thoughts.`;
+      // Specific prompt for Yesterday Review (Start of day / No work yet)
+      if (isNewDay && todayMinutes < 60) {
+        prompt = `You are a helpful academic coach. It's a new day. Yesterday the user completed ${yesterdayMins} mins of work. The daily goal is ${dailyGoal} mins. Give a brief (2 sentences) "Yesterday Review" summarizing their effort and a witty nudge for today. Use hours and minutes. Be honest about their productivity. Ensure you finish your thoughts.`;
       }
 
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${API_KEY}`, {
@@ -156,36 +160,48 @@ const App: React.FC = () => {
 
       if (finalText) {
         setAiSummary(finalText);
-        localStorage.setItem('ai_summary_v4', finalText);
-        localStorage.setItem('ai_last_fetch_v4', Date.now().toString());
-        localStorage.setItem('ai_last_triggered_mins_v4', todayMinutes.toString());
-        localStorage.setItem('ai_last_triggered_date_v4', todayStr);
-      } else if (errorInfo.toLowerCase().includes('quota') || errorInfo.includes('429')) {
-        setAiSummary(`AI Quota reached. Retrying automatically in 5 mins.`);
+        localStorage.setItem('ai_summary_v5', finalText);
+        localStorage.setItem('ai_last_real_time_v5', Date.now().toString());
+        localStorage.setItem('ai_last_work_mins_v5', todayMinutes.toString());
+        localStorage.setItem('ai_last_date_v5', todayStr);
+
+        // PERSISTENCE: If this is the "Yesterday Review" (isNewDay), save it into yesterday's record
+        if (isNewDay && history.length >= 2) {
+          setHistory(prev => {
+            const next = [...prev];
+            const yesterdayIdx = next.length - 2;
+            if (yesterdayIdx >= 0) {
+              next[yesterdayIdx] = { ...next[yesterdayIdx], summary: finalText };
+              localStorage.setItem('rev_hist_v2', JSON.stringify(next));
+            }
+            return next;
+          });
+        }
+      } else if (errorInfo.includes('429') || errorInfo.toLowerCase().includes('quota')) {
+        setAiSummary(`AI Quota reached. Retrying soon.`);
       } else {
         setAiSummary(`AI Coach is resting. (${errorInfo})`);
       }
     } catch (error: any) {
       console.error('AI Fetch Error:', error);
-      setAiSummary(`AI Connection Error. Check console.`);
+      setAiSummary(`AI Connection Error.`);
     } finally {
       setIsAiLoading(false);
       isFetchingRef.current = false;
     }
-  }, [aiSummary, todayMinutes, dailyGoal, getYesterdayMinutes]);
+  }, [aiSummary, todayMinutes, dailyGoal, getYesterdayMinutes, history]);
 
-  // Trigger on load, on new day, or on new hour milestone
   useEffect(() => {
     if (history.length > 0) {
       fetchAiSummary();
     }
-  }, [history, todayMinutes, fetchAiSummary]);
+  }, [history.length, todayMinutes, fetchAiSummary]);
 
   const updateTodayTotal = (hist: DailyData[]) => {
     const today = new Date().toISOString().split('T')[0];
     const entry = hist.find(d => d.date === today);
     if (entry) {
-      const total = Object.values(entry.categories).reduce((a, b) => a + b, 0);
+      const total = Object.values(entry.categories).reduce((a, b) => (typeof b === 'number' ? a + b : a), 0);
       setTodayMinutes(total);
     }
   };
@@ -205,12 +221,12 @@ const App: React.FC = () => {
       syncedHistory.push(existing ? {
         ...existing,
         categories: {
-          Revision: 0, Lectures: 0, Supervisions: 0, Labs: 0,
-          ...(existing.categories as Partial<Record<Category, number>>)
+          ...INITIAL_CATEGORIES,
+          ...(existing.categories as Record<Category, number>)
         }
       } : { 
         date: dateStr, 
-        categories: { Revision: 0, Lectures: 0, Supervisions: 0, Labs: 0 } 
+        categories: { ...INITIAL_CATEGORIES } 
       });
     }
 
@@ -236,7 +252,7 @@ const App: React.FC = () => {
       const next = prev.map(d => ({ ...d, categories: { ...d.categories } }));
       let idx = next.findIndex(d => d.date === today);
       if (idx === -1) {
-        next.push({ date: today, categories: { Revision: 0, Lectures: 0, Supervisions: 0, Labs: 0 } });
+        next.push({ date: today, categories: { ...INITIAL_CATEGORIES } });
         idx = next.length - 1;
       }
       next[idx].categories[activeCategory] = (next[idx].categories[activeCategory] || 0) + mins;
@@ -281,7 +297,7 @@ const App: React.FC = () => {
 
   const chartData = history.map(d => ({
     day: new Date(d.date).toLocaleDateString('en-US', { weekday: 'narrow' }),
-    total: Object.values(d.categories).reduce((a, b) => a + b, 0),
+    total: Object.values(d.categories).reduce((a, b) => (typeof b === 'number' ? a + b : a), 0),
     raw: d
   }));
 
@@ -332,7 +348,7 @@ const App: React.FC = () => {
         <section className="ai-summary-card">
           <div className="ai-header">
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span className="ai-label">Coach AI</span>
+              <span className="ai-label">AI DOS</span>
               {isAiLoading && <div className="ai-pulse" />}
             </div>
           </div>
@@ -416,15 +432,24 @@ const App: React.FC = () => {
             <div className="popup-body">
               <div className="popup-total-row">
                 <span>Total Pursuit</span>
-                <span>{Math.floor(Object.values(selectedDay.categories).reduce((a,b)=>a+b,0) / 60)}h {Object.values(selectedDay.categories).reduce((a,b)=>a+b,0) % 60}m</span>
+                <span>{Math.floor(Object.values(selectedDay.categories).reduce((a,b)=> (typeof b === 'number' ? a+b : a), 0) / 60)}h {Object.values(selectedDay.categories).reduce((a,b)=> (typeof b === 'number' ? a+b : a), 0) % 60}m</span>
               </div>
               <div className="popup-divider" />
               {CATEGORIES.map(cat => (
                 <div key={cat} className="popup-cat-row">
                   <span className="cat-label">{cat}</span>
-                  <span className="cat-val">{Math.floor(selectedDay.categories[cat] / 60)}h {selectedDay.categories[cat] % 60}m</span>
+                  <span className="cat-val">{Math.floor((selectedDay.categories[cat] || 0) / 60)}h {(selectedDay.categories[cat] || 0) % 60}m</span>
                 </div>
               ))}
+              {selectedDay.summary && (
+                <>
+                  <div className="popup-divider" />
+                  <div className="ai-history-summary">
+                    <span className="ai-summary-label">Coach Review:</span>
+                    <p className="ai-summary-text">{selectedDay.summary}</p>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
