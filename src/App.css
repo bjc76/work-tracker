@@ -505,28 +505,31 @@
 .ios-popup-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.15);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   display: flex;
-  align-items: flex-end;
+  align-items: center; /* Changed from flex-end to center */
   justify-content: center;
   z-index: 1000;
   animation: fadeIn 0.2s ease-out;
+  padding: 20px;
 }
 
 .ios-popup-card {
   width: 100%;
   max-width: 400px;
   background: white;
-  border-radius: 30px 30px 0 0;
+  border-radius: 24px; /* Changed from 30px 30px 0 0 */
   padding: 24px;
-  padding-bottom: calc(24px + env(safe-area-inset-bottom));
-  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.1);
-  animation: slideUpPopup 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+  animation: scaleInPopup 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  max-height: 90vh;
+  overflow-y: auto;
 }
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes scaleInPopup { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 @keyframes slideUpPopup { from { transform: translateY(100%); } to { transform: translateY(0); } }
 
 .popup-header {

@@ -68,6 +68,8 @@ const App: React.FC = () => {
   const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
   const [showKeyPopup, setShowKeyPopup] = useState(false);
   const [tempKey, setTempKey] = useState(geminiApiKey);
+  const [showKeyHelp, setShowKeyHelp] = useState(false);
+  const [aiDebugInfo, setAiDebugInfo] = useState<string | null>(null);
 
   const [activeCategory, setActiveCategory] = useState<Category>(() => 
     (localStorage.getItem('timer_active_category') as Category) || 'Revision'
@@ -230,9 +232,11 @@ const App: React.FC = () => {
       if (response.ok) {
         const data = await response.json();
         finalText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        setAiDebugInfo(`Success: Received ${finalText.length} characters.`);
       } else {
         const errData = await response.json().catch(() => ({}));
         errorInfo = errData.error?.message || response.statusText || `Status ${response.status}`;
+        setAiDebugInfo(`Error ${response.status}: ${errorInfo}`);
       }
 
       if (finalText) {
@@ -357,10 +361,19 @@ const App: React.FC = () => {
   };
 
   const handleKeySave = () => {
-    setGeminiApiKey(tempKey);
-    localStorage.setItem('gemini_api_key', tempKey);
+    const trimmedKey = tempKey.trim();
+    setGeminiApiKey(trimmedKey);
+    localStorage.setItem('gemini_api_key', trimmedKey);
     setShowKeyPopup(false);
+    setAiDebugInfo(`Key updated. Starting fresh fetch...`);
     fetchAiSummary(true);
+  };
+
+  const clearKey = () => {
+    setGeminiApiKey('');
+    setTempKey('');
+    localStorage.removeItem('gemini_api_key');
+    setAiDebugInfo('Key cleared.');
   };
 
   const toggleTimer = () => {
@@ -634,18 +647,39 @@ const App: React.FC = () => {
       )}
 
       {showKeyPopup && (
-        <div className="ios-popup-overlay" onClick={() => setShowKeyPopup(false)}>
+        <div className="ios-popup-overlay" onClick={() => { setShowKeyPopup(false); setShowKeyHelp(false); }}>
           <div className="ios-popup-card" onClick={e => e.stopPropagation()}>
             <div className="popup-header">
               <h3>Gemini API Key</h3>
-              <button className="close-popup" onClick={() => setShowKeyPopup(false)}>
+              <button className="close-popup" onClick={() => { setShowKeyPopup(false); setShowKeyHelp(false); }}>
                 <span className="close-icon">×</span>
               </button>
             </div>
             <div className="popup-body">
-              <p style={{ fontSize: '14px', color: 'var(--ios-text-secondary)', marginBottom: '10px' }}>
-                Your key is stored locally on this device.
-              </p>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <p style={{ fontSize: '14px', color: 'var(--ios-text-secondary)', margin: 0 }}>
+                  Your key is stored locally.
+                </p>
+                <button 
+                  onClick={() => setShowKeyHelp(!showKeyHelp)}
+                  style={{ background: 'none', border: 'none', color: 'var(--ios-blue)', fontSize: '13px', fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                >
+                  {showKeyHelp ? 'Hide Help' : 'How to get a key?'}
+                </button>
+              </div>
+
+              {showKeyHelp && (
+                <div style={{ background: 'var(--ios-light-blue)', padding: '12px', borderRadius: '12px', marginBottom: '15px', fontSize: '13px', lineHeight: '1.5' }}>
+                  <ol style={{ margin: 0, paddingLeft: '20px' }}>
+                    <li>Go to <a href="https://aistudio.google.com" target="_blank" rel="noreferrer" style={{ color: 'var(--ios-blue)', fontWeight: 600 }}>Google AI Studio</a></li>
+                    <li>Sign in with your Google account.</li>
+                    <li>Click <strong>"Get API key"</strong> on the left.</li>
+                    <li>Select <strong>"Create API key in new project"</strong>.</li>
+                    <li>Copy and paste the key below.</li>
+                  </ol>
+                </div>
+              )}
+
               <input 
                 type="password" 
                 className="ios-input" 
@@ -654,7 +688,20 @@ const App: React.FC = () => {
                 placeholder="Enter API key..."
                 autoFocus
               />
-              <button onClick={handleKeySave} className="ios-action-btn">Save Key</button>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button onClick={handleKeySave} className="ios-action-btn" style={{ flex: 2 }}>Save Key</button>
+                <button onClick={clearKey} className="ios-action-btn" style={{ flex: 1, background: '#FF3B30' }}>Clear</button>
+              </div>
+
+              {aiDebugInfo && (
+                <div style={{ marginTop: '20px', padding: '10px', background: '#f8f8f8', borderRadius: '12px', fontSize: '11px', border: '1px solid #eee' }}>
+                  <div style={{ fontWeight: 800, color: '#888', marginBottom: '4px', textTransform: 'uppercase' }}>Diagnostics</div>
+                  <div style={{ color: '#444', wordBreak: 'break-all' }}>{aiDebugInfo}</div>
+                  <div style={{ marginTop: '4px', color: '#888' }}>
+                    Active Key: {geminiApiKey ? `${geminiApiKey.slice(0, 4)}...${geminiApiKey.slice(-4)}` : 'None'}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
