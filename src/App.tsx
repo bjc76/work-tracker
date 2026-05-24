@@ -182,11 +182,21 @@ const App: React.FC = () => {
         ? ` Your previous comment was: "${aiSummary}"` 
         : "";
       
-      let prompt = `You are a helpful academic coach. Today's progress: ${todayMinutes} mins out of ${dailyGoal} mins goal. Yesterday's progress: ${yesterdayMins} mins. ${prevResponse} Current time: ${new Date().toLocaleTimeString()}. Give 2 sentences of qualitative, critically honest, and slightly witty coaching. IMPORTANT: Avoid metaphors entirely. Do not just repeat the data (hours/minutes) as the user can already see them; instead, focus on the quality of their momentum and discipline.`;
+      let prompt = `You are a helpful academic coach. Today's progress: ${todayMinutes} mins out of ${dailyGoal} mins goal. 
+          Yesterday's progress: ${yesterdayMins} mins. ${prevResponse} Current time: ${new Date().toLocaleTimeString()}. 
+          Give 2 sentences of qualitative (don't repeat numbers provided), honest, but encouraging coaching. 
+          IMPORTANT: Avoid metaphors entirely. Do not just repeat the data (hours/minutes) as the user can already see them; instead, 
+          focus on the quality of their momentum and discipline. Ensure you bear in mind the time of day when considering current progress.
+          Be kind and gentle, giving a polite nudge only when necessary. 
+          `;
 
       // Specific prompt for Yesterday Review (Start of day / No work yet)
       if (isNewDay && todayMinutes < 60) {
-        prompt = `You are a helpful academic coach. It's a new day. Yesterday the user completed ${yesterdayMins} mins of work against a ${dailyGoal} min goal. ${prevResponse} Give 2 sentences of qualitative "Yesterday Review". IMPORTANT: Avoid metaphors entirely. Do not just repeat the data; provide an honest, witty assessment of their work pattern and a nudge for today.`;
+        prompt = `You are a helpful academic coach. It's a new day. Yesterday the user completed ${yesterdayMins} mins of work 
+        against a ${dailyGoal} min goal. ${prevResponse} Give 2 sentences of qualitative "Yesterday Review". IMPORTANT: 
+        Avoid metaphors entirely. Do not just repeat the data; provide an honest, witty assessment of their work achievment and pattern.  
+        Don't use the word 'yesterday'. Only use the actual day of the week (this is today's date, so calculate yesterday's from here - ${new Date().toLocaleTimeString()})
+        Don't consider 'today', only give an evaluation of yesterday.`;
       }
 
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${API_KEY}`, {
