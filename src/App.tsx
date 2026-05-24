@@ -138,6 +138,7 @@ const App: React.FC = () => {
   const [selectedDay, setSelectedDay] = useState<DailyData | null>(null);
   const [aiSummary, setAiSummary] = useState<string>(() => localStorage.getItem('ai_summary_v5') || '');
   const [isAiLoading, setIsAiLoading] = useState(false);
+  const [easterEgg, setEasterEgg] = useState<string | null>(null);
 
   const [averageHours, setAverageHours] = useState<number | null>(null);
   
@@ -264,7 +265,9 @@ const App: React.FC = () => {
         };
         
         if (easterEggs[userName]) {
-          finalText = easterEggs[userName];
+          setEasterEgg(easterEggs[userName]);
+        } else {
+          setEasterEgg(null);
         }
         // -------------------------
 
@@ -526,6 +529,15 @@ const App: React.FC = () => {
       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '10px', marginTop: '-20px' }}>
         <button className="manual-log-btn" onClick={() => setShowManual(true)}>+ Log</button>
       </div>
+
+      {easterEgg && (
+        <section className="easter-egg-card">
+          <div className="ai-header">
+            <span className="easter-egg-label">Jesus Christ</span>
+          </div>
+          <p className="ai-text">{easterEgg}</p>
+        </section>
+      )}
 
       {(aiSummary || !geminiApiKey) && (
         <section className="ai-summary-card">

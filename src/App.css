@@ -365,6 +365,23 @@
   border-left: 4px solid var(--ios-blue);
 }
 
+.easter-egg-card {
+  background: linear-gradient(135deg, #FFF9E6 0%, #FFFDF5 100%);
+  margin: 0 0 12px 0;
+  padding: 16px;
+  border-radius: var(--border-radius);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
+  border-left: 4px solid #FFCC00;
+}
+
+.easter-egg-label {
+  font-size: 11px;
+  font-weight: 800;
+  color: #CC9900;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
 .ai-header {
   display: flex;
   align-items: center;
