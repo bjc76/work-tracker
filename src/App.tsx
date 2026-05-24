@@ -248,7 +248,7 @@ const App: React.FC = () => {
         Don't consider 'today', only give an evaluation of yesterday.`;
       }
 
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${API_KEY}`, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${API_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -274,7 +274,8 @@ const App: React.FC = () => {
         // --- EASTER EGG SYSTEM ---
         const easterEggs: Record<string, string> = {
           'Ben': 'Welcome back, Master of Code. Your discipline today is truly remarkable.',
-          'Scholar': 'The library is quiet, and so is your progress. Time to pick up the pace?'
+          'Scholar': 'The library is quiet, and so is your progress. Time to pick up the pace?',
+          'Windmil': 'Touch some grass mate'
         };
         
         if (easterEggs[userName]) {
