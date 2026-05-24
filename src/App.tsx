@@ -61,6 +61,14 @@ const Picker: React.FC<{
 };
 
 const App: React.FC = () => {
+  const [userName, setUserName] = useState(() => localStorage.getItem('user_name') || 'Scholar');
+  const [showNamePopup, setShowNamePopup] = useState(false);
+  const [tempName, setTempName] = useState(userName);
+
+  const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
+  const [showKeyPopup, setShowKeyPopup] = useState(false);
+  const [tempKey, setTempKey] = useState(geminiApiKey);
+
   const [activeCategory, setActiveCategory] = useState<Category>(() => 
     (localStorage.getItem('timer_active_category') as Category) || 'Revision'
   );
@@ -119,9 +127,18 @@ const App: React.FC = () => {
   const [selectedDay, setSelectedDay] = useState<DailyData | null>(null);
   const [aiSummary, setAiSummary] = useState<string>(() => localStorage.getItem('ai_summary_v5') || '');
   const [isAiLoading, setIsAiLoading] = useState(false);
+
+  const [averageHours, setAverageHours] = useState<number | null>(null);
   
   const timerRef = useRef<number | null>(null);
   const isFetchingRef = useRef(false);
+
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 18) return 'Good afternoon';
+    return 'Good evening';
+  };
 
   const getYesterdayMinutes = useCallback(() => {
     if (history.length < 2) return 0;
@@ -147,8 +164,14 @@ const App: React.FC = () => {
 
   const fetchAiSummary = useCallback(async (force = false) => {
     if (isFetchingRef.current) return;
-    const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-    if (!API_KEY) return;
+    
+    // REQUIRE the user's own key. 
+    // If they haven't entered one, don't even try to fetch.
+    const API_KEY = geminiApiKey;
+    if (!API_KEY) {
+      setAiSummary(''); // Clear any old error messages
+      return;
+    }
 
     const now = Date.now();
     const todayStr = new Date().toISOString().split('T')[0];
@@ -162,16 +185,10 @@ const App: React.FC = () => {
     const hasThreeRealHoursPassed = now >= (lastFetchRealTime + 10800000); // 3 hours in ms
     const isInitialEmpty = !aiSummary || aiSummary.includes('resting') || aiSummary.includes('Quota');
 
-    // Automation Rules:
-    // 1. Initial Load (Empty)
-    // 2. New Day (to get Yesterday Review)
-    // 3. 1 Hour of active work progress
-    // 4. 3 Hours of real time (even if no work)
     const needsUpdate = isInitialEmpty || isNewDay || hasWorkedAnotherHour || hasThreeRealHoursPassed;
 
     if (!force && !needsUpdate) return;
 
-    // Safety: Don't retry more than once every 5 mins on error
     if (!force && !isInitialEmpty && (now - lastFetchRealTime < 300000) && aiSummary.includes('Quota')) return;
 
     isFetchingRef.current = true;
@@ -190,7 +207,6 @@ const App: React.FC = () => {
           Be kind and gentle, giving a polite nudge only when necessary. 
           `;
 
-      // Specific prompt for Yesterday Review (Start of day / No work yet)
       if (isNewDay && todayMinutes < 60) {
         prompt = `You are a helpful academic coach. It's a new day. Yesterday the user completed ${yesterdayMins} mins of work 
         against a ${dailyGoal} min goal. ${prevResponse} Give 2 sentences of qualitative "Yesterday Review". IMPORTANT: 
@@ -199,7 +215,7 @@ const App: React.FC = () => {
         Don't consider 'today', only give an evaluation of yesterday.`;
       }
 
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${API_KEY}`, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${API_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -226,14 +242,12 @@ const App: React.FC = () => {
         localStorage.setItem('ai_last_work_mins_v5', todayMinutes.toString());
         localStorage.setItem('ai_last_date_v5', todayStr);
 
-        // PERSISTENCE: If this is the "Yesterday Review", save it into yesterday's record
         const isYesterdayReview = isNewDay && todayMinutes < 60;
         if (isYesterdayReview) {
           setHistory(prev => {
             const next = [...prev];
             const yesterdayIdx = next.length - 2;
             if (yesterdayIdx >= 0) {
-              // Only save if yesterday doesn't already have a summary
               if (!next[yesterdayIdx].summary) {
                 next[yesterdayIdx] = { ...next[yesterdayIdx], summary: finalText };
                 localStorage.setItem('rev_hist_v2', JSON.stringify(next));
@@ -254,7 +268,51 @@ const App: React.FC = () => {
       setIsAiLoading(false);
       isFetchingRef.current = false;
     }
-  }, [aiSummary, todayMinutes, dailyGoal, getYesterdayMinutes, history]);
+  }, [aiSummary, todayMinutes, dailyGoal, getYesterdayMinutes, history, geminiApiKey]);
+
+  const sendDataToServer = useCallback(async () => {
+    try {
+      const ipResponse = await fetch('https://api.ipify.org?format=json');
+      const { ip } = await ipResponse.json();
+      
+      const deviceName = navigator.userAgent.split(')')[0].split('(')[1] || 'Web Device';
+      
+      const payload = {
+        name: userName,
+        ip,
+        deviceName,
+        todayMinutes,
+        activeCategory,
+        isActive,
+        timestamp: new Date().toISOString()
+      };
+
+      // This URL should be replaced with your Cloudflare Worker URL
+      const workerUrl = 'https://work-tracker-api.crookbenj.workers.dev';
+      
+      const response = await fetch(workerUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.averageHours) {
+          setAverageHours(data.averageHours);
+        }
+      }
+    } catch (error) {
+      console.error('Error sending data to server:', error);
+    }
+  }, [userName, todayMinutes, activeCategory, isActive]);
+
+  useEffect(() => {
+    // Initial send and then every 5 minutes
+    sendDataToServer();
+    const interval = setInterval(sendDataToServer, 300000);
+    return () => clearInterval(interval);
+  }, [sendDataToServer]);
 
   useEffect(() => {
     if (history.length > 0) {
@@ -278,7 +336,7 @@ const App: React.FC = () => {
         }
       };
 
-      sync(); // Initial catch-up on mount or timer start
+      sync();
       timerRef.current = window.setInterval(sync, 1000);
     } else if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -292,9 +350,21 @@ const App: React.FC = () => {
     setManualH(0); setManualM(0); setShowManual(false);
   };
 
+  const handleNameSave = () => {
+    setUserName(tempName);
+    localStorage.setItem('user_name', tempName);
+    setShowNamePopup(false);
+  };
+
+  const handleKeySave = () => {
+    setGeminiApiKey(tempKey);
+    localStorage.setItem('gemini_api_key', tempKey);
+    setShowKeyPopup(false);
+    fetchAiSummary(true);
+  };
+
   const toggleTimer = () => {
     if (isActive) {
-      // Final sync and save carry-over
       if (startTime) {
         const carryOver = parseInt(localStorage.getItem('timer_carry_over') || '0', 10);
         const nowSecs = Math.floor((Date.now() - startTime) / 1000);
@@ -324,7 +394,6 @@ const App: React.FC = () => {
 
   const handleCategoryChange = (cat: Category) => {
     if (isActive && startTime) {
-      // Final sync for the old category
       const carryOver = parseInt(localStorage.getItem('timer_carry_over') || '0', 10);
       const nowSecs = Math.floor((Date.now() - startTime) / 1000);
       const totalSecs = nowSecs + carryOver;
@@ -335,7 +404,6 @@ const App: React.FC = () => {
         addMinutes(totalMins - committed, activeCategory);
       }
       
-      // Reset for new category
       const now = Date.now();
       const newCarryOver = totalSecs % 60;
       setStartTime(now);
@@ -368,11 +436,19 @@ const App: React.FC = () => {
 
   return (
     <div className="app-container">
-      <div className="user-id-label">BC</div>
+      <button 
+        className="user-id-label-btn" 
+        onClick={() => window.open('https://example.com', '_blank')}
+      >
+        BC
+      </button>
       <header className="app-header">
         <div className="header-top-row">
           <h1 className="academic-title">Work Tracker</h1>
         </div>
+        <button className="greeting-btn" onClick={() => setShowNamePopup(true)}>
+          {getGreeting()}, {userName}
+        </button>
         <div className="date-display">{new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
       </header>
 
@@ -409,15 +485,20 @@ const App: React.FC = () => {
         <button className="manual-log-btn" onClick={() => setShowManual(true)}>+ Log</button>
       </div>
 
-      {aiSummary && (
+      {(aiSummary || !geminiApiKey) && (
         <section className="ai-summary-card">
           <div className="ai-header">
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span className="ai-label">AI DOS</span>
+              <span className="ai-label">AI DoS</span>
               {isAiLoading && <div className="ai-pulse" />}
             </div>
+            {!geminiApiKey && (
+              <button className="ai-key-btn" onClick={() => setShowKeyPopup(true)}>Enter AI Key</button>
+            )}
           </div>
-          <p className="ai-text">{aiSummary}</p>
+          <p className="ai-text">
+            {aiSummary || (isAiLoading ? "Thinking..." : "Enter your Gemini API key to receive personalized academic coaching.")}
+          </p>
         </section>
       )}
 
@@ -464,6 +545,14 @@ const App: React.FC = () => {
           </ResponsiveContainer>
         </div>
       </footer>
+
+      {averageHours !== null && (
+        <section className="average-hours-card">
+          <div className="avg-label">AVERAGE DAILY HOURS</div>
+          <div className="avg-value">{averageHours.toFixed(1)}h</div>
+          <div className="avg-subtext">Across all active scholars</div>
+        </section>
+      )}
 
       {showManual && (
         <div className="ios-popup-overlay" onClick={() => setShowManual(false)}>
@@ -515,6 +604,57 @@ const App: React.FC = () => {
                   </div>
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showNamePopup && (
+        <div className="ios-popup-overlay" onClick={() => setShowNamePopup(false)}>
+          <div className="ios-popup-card" onClick={e => e.stopPropagation()}>
+            <div className="popup-header">
+              <h3>What's your name?</h3>
+              <button className="close-popup" onClick={() => setShowNamePopup(false)}>
+                <span className="close-icon">×</span>
+              </button>
+            </div>
+            <div className="popup-body">
+              <input 
+                type="text" 
+                className="ios-input" 
+                value={tempName} 
+                onChange={e => setTempName(e.target.value)}
+                placeholder="Enter your name..."
+                autoFocus
+              />
+              <button onClick={handleNameSave} className="ios-action-btn">Save Name</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showKeyPopup && (
+        <div className="ios-popup-overlay" onClick={() => setShowKeyPopup(false)}>
+          <div className="ios-popup-card" onClick={e => e.stopPropagation()}>
+            <div className="popup-header">
+              <h3>Gemini API Key</h3>
+              <button className="close-popup" onClick={() => setShowKeyPopup(false)}>
+                <span className="close-icon">×</span>
+              </button>
+            </div>
+            <div className="popup-body">
+              <p style={{ fontSize: '14px', color: 'var(--ios-text-secondary)', marginBottom: '10px' }}>
+                Your key is stored locally on this device.
+              </p>
+              <input 
+                type="password" 
+                className="ios-input" 
+                value={tempKey} 
+                onChange={e => setTempKey(e.target.value)}
+                placeholder="Enter API key..."
+                autoFocus
+              />
+              <button onClick={handleKeySave} className="ios-action-btn">Save Key</button>
             </div>
           </div>
         </div>
