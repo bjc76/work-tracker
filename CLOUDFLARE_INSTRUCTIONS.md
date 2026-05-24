@@ -10,7 +10,7 @@ Since your website is already on Cloudflare, using **Cloudflare Workers** with a
 
 ```sql
 CREATE TABLE user_stats (
-    id TEXT PRIMARY KEY,
+    deviceId TEXT PRIMARY KEY,
     name TEXT,
     ip TEXT,
     device TEXT,
@@ -46,19 +46,22 @@ export default {
     if (request.method === "POST") {
       try {
         const data = await request.json();
-        const { name, ip, deviceName, todayMinutes } = data;
-        const id = `${name}-${ip}`; // Simple unique ID
+        const { deviceId, name, ip, deviceName, todayMinutes } = data;
 
-        // Upsert user data
+        // Upsert user data using deviceId as the unique key
+        // This ensures a single device never creates duplicate entries
         await env.DB.prepare(`
-          INSERT INTO user_stats (id, name, ip, device, minutes, last_update)
+          INSERT INTO user_stats (deviceId, name, ip, device, minutes, last_update)
           VALUES (?, ?, ?, ?, ?, ?)
-          ON CONFLICT(id) DO UPDATE SET
+          ON CONFLICT(deviceId) DO UPDATE SET
+            name = excluded.name,
+            ip = excluded.ip,
+            device = excluded.device,
             minutes = excluded.minutes,
             last_update = excluded.last_update
-        `).bind(id, name, ip, deviceName, todayMinutes, new Date().toISOString()).run();
+        `).bind(deviceId, name, ip, deviceName, todayMinutes, new Date().toISOString()).run();
 
-        // Calculate Average (only for users with logged hours)
+        // Calculate Average (only for users who have actually logged minutes)
         const avgResult = await env.DB.prepare(`
           SELECT AVG(minutes) as avg_mins 
           FROM user_stats 
@@ -84,4 +87,4 @@ export default {
 ```
 
 ## Step 4: Update your App
-In `src/App.tsx`, find the `workerUrl` variable and replace it with your newly deployed Worker URL (e.g., `https://work-tracker-api.your-subdomain.workers.dev/update`).
+In `src/App.tsx`, find the `workerUrl` variable and replace it with your newly deployed Worker URL (e.g., `https://work-tracker-api.your-subdomain.workers.dev`).

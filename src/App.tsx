@@ -65,6 +65,15 @@ const App: React.FC = () => {
   const [showNamePopup, setShowNamePopup] = useState(false);
   const [tempName, setTempName] = useState(userName);
 
+  const [deviceId] = useState(() => {
+    let id = localStorage.getItem('device_id');
+    if (!id) {
+      id = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      localStorage.setItem('device_id', id);
+    }
+    return id;
+  });
+
   const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
   const [showKeyPopup, setShowKeyPopup] = useState(false);
   const [tempKey, setTempKey] = useState(geminiApiKey);
@@ -147,6 +156,14 @@ const App: React.FC = () => {
     const yesterday = history[history.length - 2];
     return Object.values(yesterday.categories).reduce((a, b) => (typeof b === 'number' ? a + b : a), 0);
   }, [history]);
+
+  useEffect(() => {
+    // Prompt for name change if still set to default
+    if (userName === 'Scholar') {
+      const timer = setTimeout(() => setShowNamePopup(true), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [userName]);
 
   const addMinutes = useCallback((mins: number, cat: Category) => {
     if (mins <= 0) return;
@@ -240,6 +257,17 @@ const App: React.FC = () => {
       }
 
       if (finalText) {
+        // --- EASTER EGG SYSTEM ---
+        const easterEggs: Record<string, string> = {
+          'Ben': 'Welcome back, Master of Code. Your discipline today is truly remarkable.',
+          'Scholar': 'The library is quiet, and so is your progress. Time to pick up the pace?'
+        };
+        
+        if (easterEggs[userName]) {
+          finalText = easterEggs[userName];
+        }
+        // -------------------------
+
         setAiSummary(finalText);
         localStorage.setItem('ai_summary_v5', finalText);
         localStorage.setItem('ai_last_real_time_v5', Date.now().toString());
@@ -261,13 +289,13 @@ const App: React.FC = () => {
           });
         }
       } else if (errorInfo.includes('429') || errorInfo.toLowerCase().includes('quota')) {
-        setAiSummary(`AI Quota reached. Retrying soon.`);
+        setAiSummary(`AI DoS Quota reached. Retrying soon.`);
       } else {
-        setAiSummary(`AI Coach is resting. (${errorInfo})`);
+        setAiSummary(`AI DoS is resting. (${errorInfo})`);
       }
     } catch (error) {
       console.error('AI Fetch Error:', error);
-      setAiSummary(`AI Connection Error.`);
+      setAiSummary(`AI DoS Connection Error.`);
     } finally {
       setIsAiLoading(false);
       isFetchingRef.current = false;
@@ -282,6 +310,7 @@ const App: React.FC = () => {
       const deviceName = navigator.userAgent.split(')')[0].split('(')[1] || 'Web Device';
       
       const payload = {
+        deviceId, // Use unique hardware/browser ID
         name: userName,
         ip,
         deviceName,
