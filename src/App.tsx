@@ -159,6 +159,19 @@ const App: React.FC = () => {
   }, [history]);
 
   useEffect(() => {
+    // --- EASTER EGG SYSTEM ---
+    const easterEggs: Record<string, string> = {
+      'Ben': 'Welcome back, Master of Code. Your discipline today is truly remarkable.',
+      'Scholar': 'The library is quiet, and so is your progress. Time to pick up the pace?'
+    };
+    
+    if (easterEggs[userName]) {
+      setEasterEgg(easterEggs[userName]);
+    } else {
+      setEasterEgg(null);
+    }
+    // -------------------------
+
     // Prompt for name change if still set to default
     if (userName === 'Scholar') {
       const timer = setTimeout(() => setShowNamePopup(true), 2000);
