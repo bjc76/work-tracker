@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { 
   BarChart, 
   Bar, 
@@ -61,7 +61,9 @@ const Picker: React.FC<{
 };
 
 const App: React.FC = () => {
-  const [activeCategory, setActiveCategory] = useState<Category>('Revision');
+  const [activeCategory, setActiveCategory] = useState<Category>(() => 
+    (localStorage.getItem('timer_active_category') as Category) || 'Revision'
+  );
   const [isActive, setIsActive] = useState(() => localStorage.getItem('timer_active') === 'true');
   const [startTime, setStartTime] = useState<number | null>(() => {
     const saved = localStorage.getItem('timer_start_time');
@@ -75,8 +77,38 @@ const App: React.FC = () => {
     }
     return 0;
   });
-  const [history, setHistory] = useState<DailyData[]>([]);
-  const [todayMinutes, setTodayMinutes] = useState(0);
+  const [history, setHistory] = useState<DailyData[]>(() => {
+    const saved = localStorage.getItem('rev_hist_v2');
+    let finalHistory: DailyData[] = [];
+    if (saved) finalHistory = JSON.parse(saved);
+
+    const syncedHistory: DailyData[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().split('T')[0];
+      const existing = finalHistory.find(h => h.date === dateStr);
+      
+      syncedHistory.push(existing ? {
+        ...existing,
+        categories: {
+          ...INITIAL_CATEGORIES,
+          ...(existing.categories as Record<Category, number>)
+        }
+      } : { 
+        date: dateStr, 
+        categories: { ...INITIAL_CATEGORIES } 
+      });
+    }
+    return syncedHistory;
+  });
+  
+  const todayMinutes = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    const entry = history.find(d => d.date === today);
+    return entry ? Object.values(entry.categories).reduce((a, b) => (typeof b === 'number' ? a + b : a), 0) : 0;
+  }, [history]);
+
   const [dailyGoal] = useState(480); // Fixed at 8 hours
   
   // Manual Log State
@@ -96,6 +128,22 @@ const App: React.FC = () => {
     const yesterday = history[history.length - 2];
     return Object.values(yesterday.categories).reduce((a, b) => (typeof b === 'number' ? a + b : a), 0);
   }, [history]);
+
+  const addMinutes = useCallback((mins: number, cat: Category) => {
+    if (mins <= 0) return;
+    const today = new Date().toISOString().split('T')[0];
+    setHistory(prev => {
+      const next = prev.map(d => ({ ...d, categories: { ...d.categories } }));
+      let idx = next.findIndex(d => d.date === today);
+      if (idx === -1) {
+        next.push({ date: today, categories: { ...INITIAL_CATEGORIES } });
+        idx = next.length - 1;
+      }
+      next[idx].categories[cat] = (next[idx].categories[cat] || 0) + mins;
+      localStorage.setItem('rev_hist_v2', JSON.stringify(next));
+      return next;
+    });
+  }, []);
 
   const fetchAiSummary = useCallback(async (force = false) => {
     if (isFetchingRef.current) return;
@@ -189,7 +237,7 @@ const App: React.FC = () => {
       } else {
         setAiSummary(`AI Coach is resting. (${errorInfo})`);
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('AI Fetch Error:', error);
       setAiSummary(`AI Connection Error.`);
     } finally {
@@ -204,97 +252,90 @@ const App: React.FC = () => {
     }
   }, [history.length, todayMinutes, fetchAiSummary]);
 
-  const updateTodayTotal = (hist: DailyData[]) => {
-    const today = new Date().toISOString().split('T')[0];
-    const entry = hist.find(d => d.date === today);
-    if (entry) {
-      const total = Object.values(entry.categories).reduce((a, b) => (typeof b === 'number' ? a + b : a), 0);
-      setTodayMinutes(total);
-    }
-  };
-
-  useEffect(() => {
-    const saved = localStorage.getItem('rev_hist_v2');
-    let finalHistory: DailyData[] = [];
-    if (saved) finalHistory = JSON.parse(saved);
-
-    const syncedHistory: DailyData[] = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const dateStr = d.toISOString().split('T')[0];
-      const existing = finalHistory.find(h => h.date === dateStr);
-      
-      syncedHistory.push(existing ? {
-        ...existing,
-        categories: {
-          ...INITIAL_CATEGORIES,
-          ...(existing.categories as Record<Category, number>)
-        }
-      } : { 
-        date: dateStr, 
-        categories: { ...INITIAL_CATEGORIES } 
-      });
-    }
-
-    setHistory(syncedHistory);
-    updateTodayTotal(syncedHistory);
-    localStorage.setItem('rev_hist_v2', JSON.stringify(syncedHistory));
-  }, []);
-
   useEffect(() => {
     if (isActive && startTime) {
-      timerRef.current = window.setInterval(() => {
-        const newSeconds = Math.floor((Date.now() - startTime) / 1000);
+      const carryOver = parseInt(localStorage.getItem('timer_carry_over') || '0', 10);
+      
+      const sync = () => {
+        const nowSecs = Math.floor((Date.now() - startTime) / 1000);
+        setSeconds(nowSecs);
         
-        // Auto-increment progress every 60 seconds
-        setSeconds(prev => {
-          if (Math.floor(newSeconds / 60) > Math.floor(prev / 60)) {
-            addMinutes(1);
-          }
-          return newSeconds;
-        });
-      }, 1000);
+        const totalMins = Math.floor((nowSecs + carryOver) / 60);
+        const committed = parseInt(localStorage.getItem('timer_committed_mins') || '0', 10);
+        if (totalMins > committed) {
+          addMinutes(totalMins - committed, activeCategory);
+          localStorage.setItem('timer_committed_mins', totalMins.toString());
+        }
+      };
+
+      sync(); // Initial catch-up on mount or timer start
+      timerRef.current = window.setInterval(sync, 1000);
     } else if (timerRef.current) {
       clearInterval(timerRef.current);
     }
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [isActive, startTime]);
-
-  const addMinutes = (mins: number) => {
-    const today = new Date().toISOString().split('T')[0];
-    setHistory(prev => {
-      const next = prev.map(d => ({ ...d, categories: { ...d.categories } }));
-      let idx = next.findIndex(d => d.date === today);
-      if (idx === -1) {
-        next.push({ date: today, categories: { ...INITIAL_CATEGORIES } });
-        idx = next.length - 1;
-      }
-      next[idx].categories[activeCategory] = (next[idx].categories[activeCategory] || 0) + mins;
-      localStorage.setItem('rev_hist_v2', JSON.stringify(next));
-      setTimeout(() => updateTodayTotal(next), 0);
-      return next;
-    });
-  };
+  }, [isActive, startTime, activeCategory, addMinutes]);
 
   const handleManualAdd = () => {
-    const total = manualH * 60 + manualM;
-    if (total > 0) addMinutes(total);
+    const total = (manualH * 60) + manualM;
+    if (total > 0) addMinutes(total, activeCategory);
     setManualH(0); setManualM(0); setShowManual(false);
   };
 
   const toggleTimer = () => {
     if (isActive) {
-      // No longer adding minutes here as they are added incrementally
+      // Final sync and save carry-over
+      if (startTime) {
+        const carryOver = parseInt(localStorage.getItem('timer_carry_over') || '0', 10);
+        const nowSecs = Math.floor((Date.now() - startTime) / 1000);
+        const totalSecs = nowSecs + carryOver;
+        const totalMins = Math.floor(totalSecs / 60);
+        const committed = parseInt(localStorage.getItem('timer_committed_mins') || '0', 10);
+        
+        if (totalMins > committed) {
+          addMinutes(totalMins - committed, activeCategory);
+        }
+        localStorage.setItem('timer_carry_over', (totalSecs % 60).toString());
+      }
+      
       setIsActive(false); setStartTime(null); setSeconds(0);
       localStorage.removeItem('timer_active');
       localStorage.removeItem('timer_start_time');
+      localStorage.removeItem('timer_committed_mins');
     } else {
       const now = Date.now();
       setIsActive(true); setStartTime(now);
       localStorage.setItem('timer_active', 'true');
       localStorage.setItem('timer_start_time', now.toString());
+      localStorage.setItem('timer_committed_mins', '0');
+      localStorage.setItem('timer_active_category', activeCategory);
     }
+  };
+
+  const handleCategoryChange = (cat: Category) => {
+    if (isActive && startTime) {
+      // Final sync for the old category
+      const carryOver = parseInt(localStorage.getItem('timer_carry_over') || '0', 10);
+      const nowSecs = Math.floor((Date.now() - startTime) / 1000);
+      const totalSecs = nowSecs + carryOver;
+      const totalMins = Math.floor(totalSecs / 60);
+      const committed = parseInt(localStorage.getItem('timer_committed_mins') || '0', 10);
+      
+      if (totalMins > committed) {
+        addMinutes(totalMins - committed, activeCategory);
+      }
+      
+      // Reset for new category
+      const now = Date.now();
+      const newCarryOver = totalSecs % 60;
+      setStartTime(now);
+      setSeconds(0);
+      localStorage.setItem('timer_start_time', now.toString());
+      localStorage.setItem('timer_carry_over', newCarryOver.toString());
+      localStorage.setItem('timer_committed_mins', '0');
+    }
+    setActiveCategory(cat);
+    localStorage.setItem('timer_active_category', cat);
   };
 
   const format = (s: number) => {
@@ -327,7 +368,7 @@ const App: React.FC = () => {
 
       <div className="segmented-control">
         {CATEGORIES.map(c => (
-          <button key={c} className={`segment-btn ${activeCategory === c ? 'active' : ''}`} onClick={() => setActiveCategory(c)}>
+          <button key={c} className={`segment-btn ${activeCategory === c ? 'active' : ''}`} onClick={() => handleCategoryChange(c)}>
             {c}
           </button>
         ))}
@@ -446,7 +487,7 @@ const App: React.FC = () => {
             <div className="popup-body">
               <div className="popup-total-row">
                 <span>Total Pursuit</span>
-                <span>{Math.floor(Object.values(selectedDay.categories).reduce((a,b)=> (typeof b === 'number' ? a+b : a), 0) / 60)}h {Object.values(selectedDay.categories).reduce((a,b)=> (typeof b === 'number' ? a+b : a), 0) % 60}m</span>
+                <span>{Math.floor(Object.values(selectedDay.categories).reduce((a, b) => a + (b || 0), 0) / 60)}h {Object.values(selectedDay.categories).reduce((a, b) => a + (b || 0), 0) % 60}m</span>
               </div>
               <div className="popup-divider" />
               {CATEGORIES.map(cat => (
