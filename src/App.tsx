@@ -176,7 +176,7 @@ const App: React.FC = () => {
   useEffect(() => {
     // --- EASTER EGG SYSTEM ---
     const easterEggs: Record<string, string> = {
-      'Windmil': 'Unfortunately Jesus has died. Please wait 3 days.'
+      'Windmil': 'Unfortunately Jesus has died. Please wait 3 days.',
     };
     
     if (easterEggs[userName]) {
@@ -266,9 +266,9 @@ const App: React.FC = () => {
 
       if (isNewDay && todayMinutes < 60) {
         prompt = `You are a helpful academic coach. It's a new day. Yesterday the user completed ${yesterdayMins} mins of work 
-        against a ${dailyGoal} min goal. ${prevResponse} Give 2 sentences of qualitative "Yesterday Review". IMPORTANT: 
-        Avoid metaphors entirely. Do not just repeat the data; provide an honest, witty assessment of their work achievment and pattern.  
-        Don't use the word 'yesterday'. Only use the actual day of the week (this is today's date, so calculate yesterday's from here - ${new Date().toLocaleTimeString()})
+        against a ${dailyGoal} min goal. Your last update was: ${prevResponse} Give 2 sentences of qualitative "Yesterday Review". IMPORTANT: 
+        Avoid metaphors entirely. Do not just repeat the data; provide an honest, encouraging, witty assessment of their work achievment and pattern.  
+        Don't use the word 'yesterday'. Only use the actual day of the week (this is yesterday's date: ${new Date(Date.now() - 86400000).toLocaleString()})
         Don't consider 'today', only give an evaluation of yesterday.`;
       }
 
