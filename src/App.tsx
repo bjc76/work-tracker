@@ -65,15 +65,16 @@ const App: React.FC = () => {
   const [userName, setUserName] = useState(() => localStorage.getItem('user_name') || 'Scholar');
   const [showNamePopup, setShowNamePopup] = useState(false);
   const [tempName, setTempName] = useState(userName);
-  const [isBanned, setIsBanned] = useState(false);
+  const [bannedInfo, setBannedInfo] = useState<{ isBanned: boolean; ip: string | null }>({ isBanned: false, ip: null });
 
   useEffect(() => {
     const checkBan = async () => {
       try {
         const res = await fetch('https://api.ipify.org?format=json');
         const { ip } = await res.json();
+        console.log("Checking IP:", ip);
         if (BANNED_IPS.includes(ip)) {
-          setIsBanned(true);
+          setBannedInfo({ isBanned: true, ip });
         }
       } catch (e) {
         console.error("Ban check failed", e);
@@ -246,15 +247,27 @@ const App: React.FC = () => {
       }
       
       const currentTodayTotal = Object.values(next[idx].categories).reduce((a, b) => a + (b || 0), 0);
-      const newMins = Math.max(-next[idx].categories[cat], mins); // Cannot subtract more than what's in category
-      const adjustedMins = Math.min(newMins, 1440 - currentTodayTotal); // Cannot exceed 24 hours total
       
-      if (adjustedMins === 0 && mins !== 0) {
-        // If we hit the 24h limit, maybe show an alert or just cap it
-        console.warn("Daily limit of 24 hours reached.");
+      if (mins > 0) {
+        // Adding time: cap total at 1440 (24h)
+        const allowedMins = Math.max(0, 1440 - currentTodayTotal);
+        const actualToAdd = Math.min(mins, allowedMins);
+        next[idx].categories[cat] = (next[idx].categories[cat] || 0) + actualToAdd;
+      } else {
+        // Subtracting time (Revoke): ensure category doesn't go below 0
+        const currentCatVal = next[idx].categories[cat] || 0;
+        const actualToRemove = Math.min(Math.abs(mins), currentCatVal);
+        next[idx].categories[cat] = currentCatVal - actualToRemove;
       }
-
-      next[idx].categories[cat] = Math.max(0, (next[idx].categories[cat] || 0) + adjustedMins);
+      
+      // Double check total isn't over 1440 due to any floating point/unexpected logic
+      const finalTotal = Object.values(next[idx].categories).reduce((a, b) => a + (b || 0), 0);
+      if (finalTotal > 1440) {
+        // This shouldn't happen with the logic above, but as a hard constraint:
+        // If somehow over, we subtract the excess from the current category
+        const excess = finalTotal - 1440;
+        next[idx].categories[cat] = Math.max(0, (next[idx].categories[cat] || 0) - excess);
+      }
       
       // PERFECTION: Sort by date and trim to exactly the last 7 days
       next.sort((a, b) => a.date.localeCompare(b.date));
@@ -389,15 +402,6 @@ const App: React.FC = () => {
       isFetchingRef.current = false;
     }
   }, [aiSummary, todayMinutes, dailyGoal, getYesterdayMinutes, history, geminiApiKey]);
-
-  if (isBanned) {
-    return (
-      <div className="app-container" style={{ justifyContent: 'center', alignItems: 'center', textAlign: 'center' }}>
-        <h1 style={{ color: '#FF3B30' }}>Access Denied</h1>
-        <p>This application is not available in your region or for your IP address.</p>
-      </div>
-    );
-  }
 
   const sendDataToServer = useCallback(async () => {
     try {
@@ -589,6 +593,34 @@ const App: React.FC = () => {
     total: Object.values(d.categories).reduce((a, b) => (typeof b === 'number' ? a + b : a), 0),
     raw: d
   }));
+
+  if (bannedInfo.isBanned) {
+    return (
+      <div className="app-container" style={{ 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        textAlign: 'center',
+        padding: '24px',
+        display: 'flex',
+        flexDirection: 'column'
+      }}>
+        <h1 style={{ color: '#FF3B30', fontSize: '32px', marginBottom: '16px' }}>Access Denied</h1>
+        <p style={{ color: '#1C1C1E', fontSize: '17px', lineHeight: '1.5', marginBottom: '24px' }}>
+          This application is not available for your IP address.
+        </p>
+        <div style={{ 
+          background: 'rgba(0,0,0,0.05)', 
+          padding: '12px 20px', 
+          borderRadius: '12px', 
+          fontSize: '13px', 
+          color: '#8E8E93',
+          fontFamily: 'monospace'
+        }}>
+          Detected IP: {bannedInfo.ip}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="app-container">
