@@ -18,9 +18,45 @@ interface DailyData {
 const CATEGORIES: Category[] = ['Supervisions', 'Lectures', 'Revision', 'Labs'];
 const INITIAL_CATEGORIES: Record<Category, number> = { Revision: 0, Lectures: 0, Supervisions: 0, Labs: 0 };
 const MAX_TIMER_MINUTES = 60; // 1 hour for the visual circle
-const BANNED_IPS: string[] = ['131.111.184.6']; // Add IPs to ban here
+const BANNED_IPS: string[] = ['131.111.184.6' , '195.89.33.221']; // Add IPs to ban here
+
+// --- Celebration Confetti ---
+const Confetti: React.FC = () => {
+  const pieces = useMemo(() => {
+    const colors = ['#FF3B30', '#FF9500', '#FFCC00', '#4CD964', '#5AC8FA', '#007AFF', '#5856D6', '#FF2D55'];
+    return Array.from({ length: 50 }).map(() => ({
+      left: `${Math.random() * 100}%`,
+      delay: `${Math.random() * 2}s`,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      duration: `${2 + Math.random() * 2}s`,
+      rotation: `${Math.random() * 360}deg`,
+      size: `${8 + Math.random() * 8}px`
+    }));
+  }, []);
+
+  return (
+    <div className="confetti-container">
+      {pieces.map((p, i) => (
+        <div 
+          key={i} 
+          className="confetti-piece" 
+          style={{ 
+            left: p.left, 
+            animationDelay: p.delay, 
+            backgroundColor: p.color,
+            animationDuration: p.duration,
+            transform: `rotate(${p.rotation})`,
+            width: p.size,
+            height: p.size
+          }} 
+        />
+      ))}
+    </div>
+  );
+};
 
 // --- Helper for iOS Scroll Picker ---
+
 const Picker: React.FC<{
   value: number;
   max: number;
@@ -176,6 +212,18 @@ const App: React.FC = () => {
   const [showRevokeConfirm, setShowRevokeConfirm] = useState(false);
 
   const [selectedDay, setSelectedDay] = useState<DailyData | null>(null);
+  const [showCelebration, setShowCelebration] = useState(false);
+  const [hasCelebrated, setHasCelebrated] = useState(false);
+
+  useEffect(() => {
+    if (todayMinutes >= dailyGoal && !hasCelebrated && todayMinutes > 0) {
+      setShowCelebration(true);
+      setHasCelebrated(true);
+      // Stop after 6 seconds
+      const timer = setTimeout(() => setShowCelebration(false), 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [todayMinutes, dailyGoal, hasCelebrated]);
   const [aiSummary, setAiSummary] = useState<string>(() => localStorage.getItem('ai_summary_v5') || '');
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [easterEgg, setEasterEgg] = useState<string | null>(null);
@@ -234,7 +282,7 @@ const App: React.FC = () => {
   }, [userName]);
 
   const addMinutes = useCallback((mins: number, cat: Category) => {
-    if (mins === 0) return;
+    if (mins === 0 || userName === 'Scholar') return;
     const today = new Date().toISOString().split('T')[0];
     setHistory(prev => {
       // Create a fresh copy of the history
@@ -404,6 +452,7 @@ const App: React.FC = () => {
   }, [aiSummary, todayMinutes, dailyGoal, getYesterdayMinutes, history, geminiApiKey]);
 
   const sendDataToServer = useCallback(async () => {
+    if (userName === 'Scholar') return;
     try {
       const ipResponse = await fetch('https://api.ipify.org?format=json');
       const { ip } = await ipResponse.json();
@@ -497,6 +546,10 @@ const App: React.FC = () => {
     const total = (revokeH * 60) + revokeM;
     if (total > 0) {
       addMinutes(-total, activeCategory);
+      // Trigger AI update if more than 1 hour is revoked
+      if (total >= 60) {
+        fetchAiSummary(true);
+      }
     }
     setRevokeH(0); setRevokeM(0); setShowRevoke(false); setShowRevokeConfirm(false);
   };
@@ -624,6 +677,7 @@ const App: React.FC = () => {
 
   return (
     <div className="app-container">
+      {showCelebration && <Confetti />}
       <button 
         className="user-id-label-btn" 
         onClick={() => window.open('https://example.com', '_blank')}
@@ -659,6 +713,11 @@ const App: React.FC = () => {
                 </svg>
                 <div className="time-display-container">
                   <div className="time-string">{format(seconds)}</div>
+                  {userName === 'Scholar' && (
+                    <div style={{ fontSize: '10px', color: '#FF3B30', fontWeight: 600, marginTop: '-5px', marginBottom: '5px' }}>
+                      NAME REQUIRED TO SAVE
+                    </div>
+                  )}
                   <div className={`timer-status-icon ${isActive ? 'active' : ''}`}>
                     {isActive ? <Square size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" style={{ marginLeft: '4px' }} />}
                   </div>
