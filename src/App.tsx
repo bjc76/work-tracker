@@ -18,6 +18,7 @@ interface DailyData {
 const CATEGORIES: Category[] = ['Supervisions', 'Lectures', 'Revision', 'Labs'];
 const INITIAL_CATEGORIES: Record<Category, number> = { Revision: 0, Lectures: 0, Supervisions: 0, Labs: 0 };
 const MAX_TIMER_MINUTES = 60; // 1 hour for the visual circle
+const BANNED_IPS: string[] = []; // Add IPs to ban here
 
 // --- Helper for iOS Scroll Picker ---
 const Picker: React.FC<{
@@ -64,6 +65,22 @@ const App: React.FC = () => {
   const [userName, setUserName] = useState(() => localStorage.getItem('user_name') || 'Scholar');
   const [showNamePopup, setShowNamePopup] = useState(false);
   const [tempName, setTempName] = useState(userName);
+  const [isBanned, setIsBanned] = useState(false);
+
+  useEffect(() => {
+    const checkBan = async () => {
+      try {
+        const res = await fetch('https://api.ipify.org?format=json');
+        const { ip } = await res.json();
+        if (BANNED_IPS.includes(ip)) {
+          setIsBanned(true);
+        }
+      } catch (e) {
+        console.error("Ban check failed", e);
+      }
+    };
+    checkBan();
+  }, []);
 
   const [deviceId] = useState(() => {
     let id = localStorage.getItem('device_id');
@@ -128,12 +145,34 @@ const App: React.FC = () => {
     return entry ? Object.values(entry.categories).reduce((a, b) => (typeof b === 'number' ? a + b : a), 0) : 0;
   }, [history]);
 
-  const [dailyGoal] = useState(480); // Fixed at 8 hours
+  const dailyGoal = useMemo(() => {
+    // exponential averaging with a priority on the last couple of days, 
+    // with a small (eg. 3% increase) day on day.
+    const alpha = 0.3; // Weight for the most recent day
+    let currentTarget = 480; // Start with 8 hours as baseline
+    
+    // We iterate through history (excluding today) to calculate the rolling target
+    for (let i = 0; i < history.length - 1; i++) {
+      const dayTotal = Object.values(history[i].categories).reduce((a, b) => a + (b || 0), 0);
+      if (dayTotal > 0) {
+        currentTarget = (currentTarget * (1 - alpha)) + (dayTotal * alpha);
+        currentTarget *= 1.03; // 3% increase day on day
+      }
+    }
+    
+    return Math.round(currentTarget);
+  }, [history]);
   
   // Manual Log State
   const [showManual, setShowManual] = useState(false);
   const [manualH, setManualH] = useState(0);
   const [manualM, setManualM] = useState(0);
+
+  // Revoke State
+  const [showRevoke, setShowRevoke] = useState(false);
+  const [revokeH, setRevokeH] = useState(0);
+  const [revokeM, setRevokeM] = useState(0);
+  const [showRevokeConfirm, setShowRevokeConfirm] = useState(false);
 
   const [selectedDay, setSelectedDay] = useState<DailyData | null>(null);
   const [aiSummary, setAiSummary] = useState<string>(() => localStorage.getItem('ai_summary_v5') || '');
@@ -194,7 +233,7 @@ const App: React.FC = () => {
   }, [userName]);
 
   const addMinutes = useCallback((mins: number, cat: Category) => {
-    if (mins <= 0) return;
+    if (mins === 0) return;
     const today = new Date().toISOString().split('T')[0];
     setHistory(prev => {
       // Create a fresh copy of the history
@@ -206,7 +245,16 @@ const App: React.FC = () => {
         idx = next.length - 1;
       }
       
-      next[idx].categories[cat] = (next[idx].categories[cat] || 0) + mins;
+      const currentTodayTotal = Object.values(next[idx].categories).reduce((a, b) => a + (b || 0), 0);
+      const newMins = Math.max(-next[idx].categories[cat], mins); // Cannot subtract more than what's in category
+      const adjustedMins = Math.min(newMins, 1440 - currentTodayTotal); // Cannot exceed 24 hours total
+      
+      if (adjustedMins === 0 && mins !== 0) {
+        // If we hit the 24h limit, maybe show an alert or just cap it
+        console.warn("Daily limit of 24 hours reached.");
+      }
+
+      next[idx].categories[cat] = Math.max(0, (next[idx].categories[cat] || 0) + adjustedMins);
       
       // PERFECTION: Sort by date and trim to exactly the last 7 days
       next.sort((a, b) => a.date.localeCompare(b.date));
@@ -342,6 +390,15 @@ const App: React.FC = () => {
     }
   }, [aiSummary, todayMinutes, dailyGoal, getYesterdayMinutes, history, geminiApiKey]);
 
+  if (isBanned) {
+    return (
+      <div className="app-container" style={{ justifyContent: 'center', alignItems: 'center', textAlign: 'center' }}>
+        <h1 style={{ color: '#FF3B30' }}>Access Denied</h1>
+        <p>This application is not available in your region or for your IP address.</p>
+      </div>
+    );
+  }
+
   const sendDataToServer = useCallback(async () => {
     try {
       const ipResponse = await fetch('https://api.ipify.org?format=json');
@@ -430,6 +487,14 @@ const App: React.FC = () => {
     const total = (manualH * 60) + manualM;
     if (total > 0) addMinutes(total, activeCategory);
     setManualH(0); setManualM(0); setShowManual(false);
+  };
+
+  const handleRevoke = () => {
+    const total = (revokeH * 60) + revokeM;
+    if (total > 0) {
+      addMinutes(-total, activeCategory);
+    }
+    setRevokeH(0); setRevokeM(0); setShowRevoke(false); setShowRevokeConfirm(false);
   };
 
   const handleNameSave = () => {
@@ -612,7 +677,7 @@ const App: React.FC = () => {
         </div>
         <div className="today-total-row">
           <span className="today-total">{Math.floor(todayMinutes / 60)}h {todayMinutes % 60}m completed</span>
-          <span className="goal-label">Goal: 8h</span>
+          <span className="goal-label">Goal: {Math.floor(dailyGoal / 60)}h {dailyGoal % 60}m</span>
         </div>
       </section>
 
@@ -786,6 +851,65 @@ const App: React.FC = () => {
                   <div style={{ color: '#444', wordBreak: 'break-all' }}>{aiDebugInfo}</div>
                   <div style={{ marginTop: '4px', color: '#888' }}>
                     Active Key: {geminiApiKey ? `${geminiApiKey.slice(0, 4)}...${geminiApiKey.slice(-4)}` : 'None'}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', justifyContent: 'center', padding: '20px 0 40px' }}>
+        <button 
+          onClick={() => setShowRevoke(true)} 
+          style={{ 
+            background: 'none', 
+            border: 'none', 
+            color: '#D1D1D6', 
+            fontSize: '10px', 
+            cursor: 'pointer',
+            opacity: 0.5
+          }}
+        >
+          Revoke Time
+        </button>
+      </div>
+
+      {showRevoke && (
+        <div className="ios-popup-overlay" onClick={() => setShowRevoke(false)}>
+          <div className="ios-popup-card" onClick={e => e.stopPropagation()}>
+            <div className="popup-header">
+              <h3>Revoke Time</h3>
+              <button className="close-popup" onClick={() => setShowRevoke(false)}>
+                <span className="close-icon">×</span>
+              </button>
+            </div>
+            <div className="popup-body">
+              <p style={{ fontSize: '13px', color: '#8E8E93', marginBottom: '15px', textAlign: 'center' }}>
+                Accidentally left the timer running? Use this as a last resort to drag back hours.
+              </p>
+              {!showRevokeConfirm ? (
+                <>
+                  <div className="ios-picker-wrapper">
+                    <Picker value={revokeH} max={23} label="hours" onChange={setRevokeH} />
+                    <Picker value={revokeM} max={59} label="min" onChange={setRevokeM} />
+                  </div>
+                  <button 
+                    onClick={() => setShowRevokeConfirm(true)} 
+                    className="ios-action-btn"
+                    style={{ background: '#FF3B30' }}
+                  >
+                    Remove from {activeCategory}
+                  </button>
+                </>
+              ) : (
+                <div style={{ textAlign: 'center' }}>
+                  <p style={{ fontWeight: 600, marginBottom: '20px' }}>
+                    Are you sure you want to remove {revokeH}h {revokeM}m from {activeCategory}?
+                  </p>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button onClick={handleRevoke} className="ios-action-btn" style={{ background: '#FF3B30', flex: 1 }}>Yes, Revoke</button>
+                    <button onClick={() => setShowRevokeConfirm(false)} className="ios-action-btn" style={{ flex: 1 }}>Cancel</button>
                   </div>
                 </div>
               )}
