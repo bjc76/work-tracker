@@ -18,7 +18,7 @@ interface DailyData {
 const CATEGORIES: Category[] = ['Supervisions', 'Lectures', 'Revision', 'Labs'];
 const INITIAL_CATEGORIES: Record<Category, number> = { Revision: 0, Lectures: 0, Supervisions: 0, Labs: 0 };
 const MAX_TIMER_MINUTES = 60; // 1 hour for the visual circle
-const BANNED_IPS: string[] = ['131.111.184.135']; // Add IPs to ban here
+const BANNED_IPS: string[] = ['131.111.184.6']; // Add IPs to ban here
 
 // --- Helper for iOS Scroll Picker ---
 const Picker: React.FC<{
@@ -606,7 +606,7 @@ const App: React.FC = () => {
       }}>
         <h1 style={{ color: '#FF3B30', fontSize: '32px', marginBottom: '16px' }}>Access Denied</h1>
         <p style={{ color: '#1C1C1E', fontSize: '17px', lineHeight: '1.5', marginBottom: '24px' }}>
-          This application is not available for your IP address.
+          Stop being a prick.
         </p>
         <div style={{ 
           background: 'rgba(0,0,0,0.05)', 
