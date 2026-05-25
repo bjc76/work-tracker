@@ -141,6 +141,7 @@ const App: React.FC = () => {
   const [easterEgg, setEasterEgg] = useState<string | null>(null);
 
   const [averageHours, setAverageHours] = useState<number | null>(null);
+  const lastSyncedMinutesRef = useRef<number>(0);
   
   const timerRef = useRef<number | null>(null);
   const isFetchingRef = useRef(false);
@@ -196,13 +197,23 @@ const App: React.FC = () => {
     if (mins <= 0) return;
     const today = new Date().toISOString().split('T')[0];
     setHistory(prev => {
-      const next = prev.map(d => ({ ...d, categories: { ...d.categories } }));
+      // Create a fresh copy of the history
+      let next = prev.map(d => ({ ...d, categories: { ...d.categories } }));
+      
       let idx = next.findIndex(d => d.date === today);
       if (idx === -1) {
         next.push({ date: today, categories: { ...INITIAL_CATEGORIES } });
         idx = next.length - 1;
       }
+      
       next[idx].categories[cat] = (next[idx].categories[cat] || 0) + mins;
+      
+      // PERFECTION: Sort by date and trim to exactly the last 7 days
+      next.sort((a, b) => a.date.localeCompare(b.date));
+      if (next.length > 7) {
+        next = next.slice(next.length - 7);
+      }
+      
       localStorage.setItem('rev_hist_v2', JSON.stringify(next));
       return next;
     });
@@ -338,14 +349,22 @@ const App: React.FC = () => {
       
       const deviceName = navigator.userAgent.split(')')[0].split('(')[1] || 'Web Device';
       
+      // Calculate how many minutes were added since the last server sync
+      const deltaMinutes = Math.max(0, todayMinutes - lastSyncedMinutesRef.current);
+      
       const payload = {
-        deviceId, // Use unique hardware/browser ID
+        deviceId,
         name: userName,
         ip,
         deviceName,
         todayMinutes,
+        deltaMinutes, // To track exactly WHEN hours are increasing
         activeCategory,
         isActive,
+        history: history.map(h => ({
+          date: h.date,
+          total: Object.values(h.categories).reduce((a, b) => a + (b || 0), 0)
+        })),
         timestamp: new Date().toISOString()
       };
 
@@ -362,11 +381,13 @@ const App: React.FC = () => {
         if (data.averageHours) {
           setAverageHours(data.averageHours);
         }
+        // Only update the sync reference on success
+        lastSyncedMinutesRef.current = todayMinutes;
       }
     } catch (error) {
       console.error('Error sending data to server:', error);
     }
-  }, [userName, todayMinutes, activeCategory, isActive]);
+  }, [userName, todayMinutes, activeCategory, isActive, history, deviceId]);
 
   useEffect(() => {
     // Initial send and then every 5 minutes
