@@ -159,10 +159,23 @@ const App: React.FC = () => {
   }, [history]);
 
   useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'user_name' && e.newValue) {
+        setUserName(e.newValue);
+        setTempName(e.newValue);
+      }
+      if (e.key === 'rev_hist_v2' && e.newValue) {
+        setHistory(JSON.parse(e.newValue));
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
+  useEffect(() => {
     // --- EASTER EGG SYSTEM ---
     const easterEggs: Record<string, string> = {
-      'Ben': 'Welcome back, Master of Code. Your discipline today is truly remarkable.',
-      'Scholar': 'The library is quiet, and so is your progress. Time to pick up the pace?'
+      'Windmil': 'Unfortunately Jesus has died. Please wait 3 days.'
     };
     
     if (easterEggs[userName]) {
@@ -273,8 +286,7 @@ const App: React.FC = () => {
       if (finalText) {
         // --- EASTER EGG SYSTEM ---
         const easterEggs: Record<string, string> = {
-          'Ben': 'Welcome back, Master of Code. Your discipline today is truly remarkable.',
-          'Scholar': 'The library is quiet, and so is your progress. Time to pick up the pace?',
+          'Scholar': 'Better start locking in if you wanna avoid that third class',
           'Windmil': 'Touch some grass mate'
         };
         
@@ -337,7 +349,6 @@ const App: React.FC = () => {
         timestamp: new Date().toISOString()
       };
 
-      // This URL should be replaced with your Cloudflare Worker URL
       const workerUrl = 'https://work-tracker-api.crookbenj.workers.dev';
       
       const response = await fetch(workerUrl, {
