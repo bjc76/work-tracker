@@ -18,7 +18,7 @@ interface DailyData {
 const CATEGORIES: Category[] = ['Supervisions', 'Lectures', 'Revision', 'Labs'];
 const INITIAL_CATEGORIES: Record<Category, number> = { Revision: 0, Lectures: 0, Supervisions: 0, Labs: 0 };
 const MAX_TIMER_MINUTES = 60; // 1 hour for the visual circle
-const BANNED_IPS: string[] = []; // Add IPs to ban here
+const BANNED_IPS: string[] = ['131.111.184.135']; // Add IPs to ban here
 
 // --- Helper for iOS Scroll Picker ---
 const Picker: React.FC<{
