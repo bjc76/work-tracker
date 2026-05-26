@@ -183,14 +183,18 @@ const App: React.FC = () => {
   }, [history]);
 
   const dailyGoal = useMemo(() => {
-    // exponential averaging with a priority on the last couple of days, 
-    // with a small (eg. 3% increase) day on day.
+    const today = new Date().toISOString().split('T')[0];
     const alpha = 0.3; // Weight for the most recent day
     let currentTarget = 480; // Start with 8 hours as baseline
     
-    // We iterate through history (excluding today) to calculate the rolling target
-    for (let i = 0; i < history.length - 1; i++) {
-      const dayTotal = Object.values(history[i].categories).reduce((a, b) => a + (b || 0), 0);
+    // Sort history to ensure chronological order for the rolling average
+    const sortedHistory = [...history].sort((a, b) => a.date.localeCompare(b.date));
+    
+    // We iterate through history to calculate the rolling target, skipping today
+    for (const day of sortedHistory) {
+      if (day.date >= today) continue;
+      
+      const dayTotal = Object.values(day.categories).reduce((a, b) => a + (b || 0), 0);
       if (dayTotal > 0) {
         currentTarget = (currentTarget * (1 - alpha)) + (dayTotal * alpha);
         currentTarget *= 1.03; // 3% increase day on day
@@ -199,6 +203,11 @@ const App: React.FC = () => {
     
     return Math.round(currentTarget);
   }, [history]);
+
+  const progressPercent = useMemo(() => {
+    if (todayMinutes >= dailyGoal) return 100;
+    return Math.floor((todayMinutes / dailyGoal) * 100);
+  }, [todayMinutes, dailyGoal]);
   
   // Manual Log State
   const [showManual, setShowManual] = useState(false);
@@ -281,8 +290,10 @@ const App: React.FC = () => {
     }
   }, [userName]);
 
+  const isDefaultName = (name: string) => !name || name.trim() === '' || name === 'Scholar';
+
   const addMinutes = useCallback((mins: number, cat: Category) => {
-    if (mins === 0 || userName === 'Scholar') return;
+    if (mins === 0 || isDefaultName(userName)) return;
     const today = new Date().toISOString().split('T')[0];
     setHistory(prev => {
       // Create a fresh copy of the history
@@ -326,7 +337,7 @@ const App: React.FC = () => {
       localStorage.setItem('rev_hist_v2', JSON.stringify(next));
       return next;
     });
-  }, []);
+  }, [userName]);
 
   const fetchAiSummary = useCallback(async (force = false) => {
     if (isFetchingRef.current) return;
@@ -449,10 +460,10 @@ const App: React.FC = () => {
       setIsAiLoading(false);
       isFetchingRef.current = false;
     }
-  }, [aiSummary, todayMinutes, dailyGoal, getYesterdayMinutes, history, geminiApiKey]);
+  }, [aiSummary, todayMinutes, dailyGoal, getYesterdayMinutes, history, geminiApiKey, userName]);
 
   const sendDataToServer = useCallback(async () => {
-    if (userName === 'Scholar') return;
+    if (isDefaultName(userName)) return;
     try {
       const ipResponse = await fetch('https://api.ipify.org?format=json');
       const { ip } = await ipResponse.json();
@@ -761,7 +772,7 @@ const App: React.FC = () => {
       <section className="progress-section">
         <div className="progress-labels">
           <span>Daily Progress</span>
-          <span className="progress-value">{Math.round(dProg * 100)}%</span>
+          <span className="progress-value">{progressPercent}%</span>
         </div>
         <div className="flat-progress-track">
           <div className="flat-progress-fill" style={{ width: `${dProg * 100}%` }} />
