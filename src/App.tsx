@@ -19,6 +19,29 @@ const CATEGORIES: Category[] = ['Supervisions', 'Lectures', 'Revision', 'Labs'];
 const INITIAL_CATEGORIES: Record<Category, number> = { Revision: 0, Lectures: 0, Supervisions: 0, Labs: 0 };
 const MAX_TIMER_MINUTES = 60; // 1 hour for the visual circle
 const BANNED_IPS: string[] = ['131.111.184.6' , '195.89.33.221']; // Add IPs to ban here
+const DEFAULT_GOAL_MINS = 480;
+
+// --- Calculation Helpers ---
+const calculateGoalForDate = (history: DailyData[], type: 'default' | 'average', targetDate: string) => {
+  if (type === 'default') return DEFAULT_GOAL_MINS;
+  
+  const alpha = 0.3; // Weight for the most recent day
+  let currentTarget = DEFAULT_GOAL_MINS;
+  
+  const sortedHistory = [...history].sort((a, b) => a.date.localeCompare(b.date));
+  
+  for (const day of sortedHistory) {
+    if (day.date >= targetDate) break;
+    
+    const dayTotal = Object.values(day.categories).reduce((a, b) => a + (b || 0), 0);
+    if (dayTotal > 0) {
+      currentTarget = (currentTarget * (1 - alpha)) + (dayTotal * alpha);
+      currentTarget *= 1.03; // 3% increase day on day
+    }
+  }
+  
+  return Math.round(currentTarget);
+};
 
 // --- Celebration Confetti ---
 const Confetti: React.FC = () => {
@@ -134,6 +157,13 @@ const App: React.FC = () => {
   const [showKeyHelp, setShowKeyHelp] = useState(false);
   const [aiDebugInfo, setAiDebugInfo] = useState<string | null>(null);
 
+  const [goalType, setGoalType] = useState<'default' | 'average'>(() => 
+    (localStorage.getItem('goal_type') as 'default' | 'average') || 'average'
+  );
+  const [showAverage, setShowAverage] = useState(() => 
+    localStorage.getItem('show_average') !== 'false'
+  );
+
   const [activeCategory, setActiveCategory] = useState<Category>(() => 
     (localStorage.getItem('timer_active_category') as Category) || 'Revision'
   );
@@ -184,25 +214,8 @@ const App: React.FC = () => {
 
   const dailyGoal = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
-    const alpha = 0.3; // Weight for the most recent day
-    let currentTarget = 480; // Start with 8 hours as baseline
-    
-    // Sort history to ensure chronological order for the rolling average
-    const sortedHistory = [...history].sort((a, b) => a.date.localeCompare(b.date));
-    
-    // We iterate through history to calculate the rolling target, skipping today
-    for (const day of sortedHistory) {
-      if (day.date >= today) continue;
-      
-      const dayTotal = Object.values(day.categories).reduce((a, b) => a + (b || 0), 0);
-      if (dayTotal > 0) {
-        currentTarget = (currentTarget * (1 - alpha)) + (dayTotal * alpha);
-        currentTarget *= 1.03; // 3% increase day on day
-      }
-    }
-    
-    return Math.round(currentTarget);
-  }, [history]);
+    return calculateGoalForDate(history, goalType, today);
+  }, [history, goalType]);
 
   const progressPercent = useMemo(() => {
     if (todayMinutes >= dailyGoal) return 100;
@@ -235,6 +248,7 @@ const App: React.FC = () => {
   }, [todayMinutes, dailyGoal, hasCelebrated]);
   const [aiSummary, setAiSummary] = useState<string>(() => localStorage.getItem('ai_summary_v5') || '');
   const [isAiLoading, setIsAiLoading] = useState(false);
+  const [showGoalPopup, setShowGoalPopup] = useState(false);
   const [easterEgg, setEasterEgg] = useState<string | null>(null);
 
   const [averageHours, setAverageHours] = useState<number | null>(null);
@@ -372,22 +386,28 @@ const App: React.FC = () => {
     setIsAiLoading(true);
     try {
       const yesterdayMins = getYesterdayMinutes();
+      const yesterdayDate = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+      const yesterdayGoal = calculateGoalForDate(history, goalType, yesterdayDate);
+      
       const prevResponse = aiSummary && !aiSummary.includes('resting') && !aiSummary.includes('Quota') && !aiSummary.includes('Connection') 
         ? ` Your previous comment was: "${aiSummary}"` 
         : "";
       
       let prompt = `You are a helpful academic coach. Today's progress: ${todayMinutes} mins out of ${dailyGoal} mins goal. 
           Yesterday's progress: ${yesterdayMins} mins. ${prevResponse} Current time: ${new Date().toLocaleTimeString()}. 
+          The user is currently in intense revision mode. 
           Give 2 sentences of qualitative (don't repeat numbers provided), honest, but encouraging coaching. 
           IMPORTANT: Avoid metaphors entirely. Do not just repeat the data (hours/minutes) as the user can already see them; instead, 
           focus on the quality of their momentum and discipline. Ensure you bear in mind the time of day when considering current progress.
+          Note that for revision, work often intensifies in the afternoon and evening, so a slow start in the morning is acceptable.
           Be kind and gentle, giving a polite nudge only when necessary. 
           `;
 
       if (isNewDay && todayMinutes < 60) {
         prompt = `You are a helpful academic coach. It's a new day. Yesterday the user completed ${yesterdayMins} mins of work 
-        against a ${dailyGoal} min goal. Your last update was: ${prevResponse} Give 2 sentences of qualitative "Yesterday Review". IMPORTANT: 
+        against a ${yesterdayGoal} min goal. Your last update was: ${prevResponse} Give 2 sentences of qualitative "Yesterday Review". IMPORTANT: 
         Avoid metaphors entirely. Do not just repeat the data; provide an honest, encouraging, witty assessment of their work achievment and pattern.  
+        The user is in revision mode, where late night sessions are common.
         Don't use the word 'yesterday'. Only use the actual day of the week (this is yesterday's date: ${new Date(Date.now() - 86400000).toLocaleString()})
         Don't consider 'today', only give an evaluation of yesterday.`;
       }
@@ -779,7 +799,9 @@ const App: React.FC = () => {
         </div>
         <div className="today-total-row">
           <span className="today-total">{Math.floor(todayMinutes / 60)}h {todayMinutes % 60}m completed</span>
-          <span className="goal-label">Goal: {Math.floor(dailyGoal / 60)}h {dailyGoal % 60}m</span>
+          <button className="goal-label" onClick={() => setShowGoalPopup(true)}>
+            Goal: {Math.floor(dailyGoal / 60)}h {dailyGoal % 60}m
+          </button>
         </div>
       </section>
 
@@ -813,12 +835,42 @@ const App: React.FC = () => {
         </div>
       </footer>
 
-      {averageHours !== null && (
+      {averageHours !== null && showAverage && (
         <section className="average-hours-card">
+          <button 
+            className="close-avg-btn" 
+            onClick={() => {
+              setShowAverage(false);
+              localStorage.setItem('show_average', 'false');
+            }}
+          >
+            ×
+          </button>
           <div className="avg-label">AVERAGE DAILY HOURS</div>
           <div className="avg-value">{averageHours.toFixed(1)}h</div>
           <div className="avg-subtext">Across all active scholars</div>
         </section>
+      )}
+      
+      {!showAverage && averageHours !== null && (
+        <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+          <button 
+            onClick={() => {
+              setShowAverage(true);
+              localStorage.setItem('show_average', 'true');
+            }}
+            style={{ 
+              background: 'none', 
+              border: 'none', 
+              color: 'var(--ios-blue)', 
+              fontSize: '11px', 
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+          >
+            Show Global Average
+          </button>
+        </div>
       )}
 
       {showManual && (
@@ -976,6 +1028,48 @@ const App: React.FC = () => {
           Revoke Time
         </button>
       </div>
+
+      {showGoalPopup && (
+        <div className="ios-popup-overlay" onClick={() => setShowGoalPopup(false)}>
+          <div className="ios-popup-card" onClick={e => e.stopPropagation()}>
+            <div className="popup-header">
+              <h3>Goal Setting</h3>
+              <button className="close-popup" onClick={() => setShowGoalPopup(false)}>
+                <span className="close-icon">×</span>
+              </button>
+            </div>
+            <div className="popup-body">
+              <p style={{ fontSize: '13px', color: '#8E8E93', marginBottom: '15px', textAlign: 'center' }}>
+                Choose how your daily goal is calculated.
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <button 
+                  className={`ios-action-btn ${goalType === 'average' ? '' : 'secondary'}`}
+                  style={{ background: goalType === 'average' ? 'var(--ios-blue)' : 'var(--ios-light-blue)', color: goalType === 'average' ? 'white' : 'var(--ios-blue)' }}
+                  onClick={() => {
+                    setGoalType('average');
+                    localStorage.setItem('goal_type', 'average');
+                    setShowGoalPopup(false);
+                  }}
+                >
+                  Rolling Average {goalType === 'average' && '✓'}
+                </button>
+                <button 
+                  className={`ios-action-btn ${goalType === 'default' ? '' : 'secondary'}`}
+                  style={{ background: goalType === 'default' ? 'var(--ios-blue)' : 'var(--ios-light-blue)', color: goalType === 'default' ? 'white' : 'var(--ios-blue)' }}
+                  onClick={() => {
+                    setGoalType('default');
+                    localStorage.setItem('goal_type', 'default');
+                    setShowGoalPopup(false);
+                  }}
+                >
+                  Fixed (8 Hours) {goalType === 'default' && '✓'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showRevoke && (
         <div className="ios-popup-overlay" onClick={() => setShowRevoke(false)}>
